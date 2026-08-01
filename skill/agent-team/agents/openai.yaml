@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Team"
+  short_description: "Choose the smallest safe Agent setup"
+  default_prompt: "Use $agent-team to preview or run this goal with risk-matched verification."

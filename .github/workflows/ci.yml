@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python-tests:
+    name: Python tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run unit tests
+        run: python -m unittest discover -s skill/agent-team/scripts -p "test_*.py"
+
+  synchronization-smoke-test:
+    name: Synchronization smoke test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install into a temporary runtime copy
+        shell: powershell
+        run: |
+          $destination = Join-Path $env:RUNNER_TEMP 'agent-team-runtime'
+          ./scripts/sync-agent-team.ps1 -Mode Install -Destination $destination -Confirm:$false
+          ./scripts/sync-agent-team.ps1 -Mode Verify -Destination $destination
