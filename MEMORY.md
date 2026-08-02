@@ -20,3 +20,15 @@ Store durable decisions for the canonical `agent-team` Skill source.
   explicit patent grant.
 - Public documentation must not depend on a maintainer's machine paths or make
   unsupported adoption claims.
+
+### 2026-08-02: Public GitHub distribution starts at v0.1.0
+
+- The canonical public remote is
+  `https://github.com/youngfor-shoot/codex-agent-team`.
+- The first public release is `v0.1.0`, created only after Python tests passed
+  on Linux and Windows and the Windows install/verify smoke test passed.
+- GitHub Actions are pinned to full commit SHAs and have read-only repository
+  contents permission.
+- GitHub private vulnerability reporting is enabled for sensitive findings.
+- Stars, downloads, and external adoption remain unknown until public evidence
+  exists; release or application copy must not imply otherwise.
