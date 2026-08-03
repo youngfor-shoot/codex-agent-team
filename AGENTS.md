@@ -9,6 +9,7 @@ second source of truth.
 ## Scope
 
 - Keep the Skill under `skill/agent-team/`.
+- Keep versioned companion custom-agent profiles under `agents/`.
 - Keep repository-only installation and verification helpers under `scripts/`.
 - Keep project decisions in `MEMORY.md` and current behavior in `Tech-Spec.md`.
 - Keep public setup and usage guidance in the repository-root `README.md`, not
@@ -34,8 +35,10 @@ Run from the repository root:
 
 ```powershell
 python -m unittest discover -s skill/agent-team/scripts -p "test_*.py"
+python -m unittest discover -s scripts -p "test_*.py"
 python "$env:USERPROFILE/.codex/skills/.system/skill-creator/scripts/quick_validate.py" skill/agent-team
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-agent-team.ps1 -Mode Verify
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-worker-agents.ps1 -Mode Verify
 ```
 
 Use `-Mode Install` only when the repository version is ready to replace the

@@ -33,6 +33,18 @@ REQUIRED_HEADINGS = {
     "## Integration Checklist",
     "## Final State",
 }
+REQUIRED_DISPATCH_HEADINGS = {
+    "### Guidance",
+    "### Context",
+    "### Mission",
+}
+REQUIRED_HANDOFF_FIELDS = {
+    "finding_severity:",
+    "goal_alignment:",
+    "new_assumptions:",
+    "next_authorized_step:",
+    "scope_delta:",
+}
 ALLOWED_TOPOLOGIES = {"single", "temporary", "persistent"}
 ALLOWED_WAKEUPS = {"none", "heartbeat", "cron"}
 ALLOWED_CONVERGENCE = {"single-pass", "evidence-loop", "phase-gated"}
@@ -73,12 +85,10 @@ def validate_template(text: str) -> list[str]:
     for heading in sorted(REQUIRED_HEADINGS):
         if heading not in text:
             errors.append(f"template missing heading: {heading}")
-    for handoff_field in (
-        "goal_alignment:",
-        "scope_delta:",
-        "new_assumptions:",
-        "next_authorized_step:",
-    ):
+    for heading in sorted(REQUIRED_DISPATCH_HEADINGS):
+        if heading not in text:
+            errors.append(f"template missing dispatch heading: {heading}")
+    for handoff_field in sorted(REQUIRED_HANDOFF_FIELDS):
         if handoff_field not in text:
             errors.append(f"template missing handoff field: {handoff_field}")
     return errors
