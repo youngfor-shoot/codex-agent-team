@@ -18,6 +18,9 @@ authority.
 - Chooses a single pass, phase gates, or a bounded evidence loop.
 - Requires deterministic checks for material work and adds independent review
   only for a named residual risk.
+- Optionally routes specification-determined temporary implementation to a
+  Luna worker and context-heavy or higher-risk implementation to a Terra
+  worker while Codex retains architecture and acceptance.
 - Preserves human gates around publication, deployment, deletion, payment,
   permissions, and other consequential actions.
 - Validates task packets and can freeze an isolated Git-worktree evidence loop.
@@ -42,12 +45,19 @@ Clone the repository, then install the managed Skill surface:
 ```powershell
 git clone https://github.com/youngfor-shoot/codex-agent-team.git
 Set-Location codex-agent-team
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-agent-team.ps1 -Mode Install -Confirm:$false
+& .\scripts\sync-agent-team.ps1 -Mode Install -Confirm:$false
+& .\scripts\sync-worker-agents.ps1 -Mode Install -Confirm:$false
 ```
 
 The helper installs to `~/.codex/skills/agent-team` by default, backs up the
 currently managed files, preserves unknown files, and verifies hashes after the
 copy. Pass `-Destination <path>` to use another runtime location.
+
+The companion helper installs only `luna-worker.toml` and
+`terra-worker.toml` to `~/.codex/agents`, backing up existing managed copies
+and preserving every unrelated Agent file. These optional lanes require
+runtime access to `gpt-5.6-luna` and `gpt-5.6-terra`; Agent Team remains usable
+with explicitly reported native fallback roles when they are unavailable.
 
 On another platform, copy `skill/agent-team/` to
 `~/.codex/skills/agent-team/` with the platform's normal file tools.
@@ -94,8 +104,10 @@ See [`SECURITY.md`](SECURITY.md) for private vulnerability reporting.
 
 ```powershell
 python -m unittest discover -s skill/agent-team/scripts -p "test_*.py"
+python -m unittest discover -s scripts -p "test_*.py"
 python "$env:USERPROFILE/.codex/skills/.system/skill-creator/scripts/quick_validate.py" skill/agent-team
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-agent-team.ps1 -Mode Verify
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-worker-agents.ps1 -Mode Verify
 ```
 
 The first command is portable. The structural validator requires a local Codex
@@ -107,6 +119,7 @@ fresh install/verify cycle on Windows.
 
 ```text
 skill/agent-team/          Canonical Codex Skill
+agents/                    Canonical optional worker profiles
 scripts/                   Repository installation and verification helpers
 PRD.md                     Product requirements and acceptance criteria
 Tech-Spec.md               Current technical contract

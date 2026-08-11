@@ -98,6 +98,10 @@ Before delegation:
 7. Continue with Codex alone when the task is small, sequential, or cheaper to
    complete directly.
 
+Before assigning temporary implementation work, read
+`references/implementation-lanes.md`, inspect the callable custom types, and
+record the selected implementation `agent_type` in Mission.
+
 Never invent work merely to involve every backend.
 
 When auditing prior tasks, distinguish `confirmed`, `contradicted`, `unknown`,
@@ -244,7 +248,9 @@ independent read-only review.
 1. Select `phase-gated` for unresolved visual/product judgment; otherwise
    select `single-pass` or `evidence-loop` from the deterministic acceptance
    and isolation conditions above.
-2. Let Codex choose the implementation and make the canonical source changes.
+2. Let Codex own integration and canonical source changes. When temporary
+   delegation is useful, route bounded implementation through the optional
+   Luna/Terra contract in `references/implementation-lanes.md`.
 3. Run focused deterministic checks and controller-owned whole-task checks.
 4. When the review gate is `required`, send its bounded question and scope to
    one backend: a native read-only verifier or AgentParliament, not both for the
@@ -299,9 +305,18 @@ temporary workstreams still route through `orchestrate-parallel-work`.
 
 1. Create a task-scoped control packet when project rules require one.
 2. Spawn the smallest set of native child Agents with one bounded outcome each.
-3. Give every child the canonical objective, current phase, exact inputs,
-   ownership, constraints, forbidden assumptions, deliverable, acceptance,
-   dependencies, next authorized step, and stop conditions.
+   For implementation workstreams, select the optional Luna/Terra lane from
+   `references/implementation-lanes.md` and use `fork_turns: none`.
+3. Present every child assignment in three sections backed by the canonical
+   task packet:
+   - **Guidance:** execution method, constraints, quality standard, and
+     applicable Skill scope.
+   - **Context:** canonical objective, current phase, exact inputs, upstream
+     evidence, user preferences, and dependencies.
+   - **Mission:** bounded goal, ownership, deliverable, acceptance, next
+     authorized step, and stop conditions.
+   Treat these headings as a presentation layer, not a second state model; the
+   task packet wins if wording conflicts or becomes stale.
 4. Keep one writer per file or shared external state.
 5. Route changed constraints through the controller.
 6. Require handoffs to report goal alignment, scope delta, new assumptions,
@@ -334,9 +349,10 @@ Create and initialize:
 1. Create the controller first, then the role tasks.
 2. Title them `[Team:<name>] Controller` and `[Team:<name>] <role>`.
 3. Pin only the controller by default.
-4. Initialize each role with its responsibility, write scope, evidence source,
-   handoff contract, forbidden actions, completion boundary, and controller
-   task identity.
+4. Initialize each role with the same **Guidance / Context / Mission**
+   presentation used for temporary children. Include its responsibility, write
+   scope, evidence source, handoff contract, forbidden actions, completion
+   boundary, and controller task identity in the matching canonical fields.
 5. Send the controller a manifest with every task ID, role, write scope, next
    checkpoint, completion condition, and review or retirement trigger.
 6. Wait for each launch to complete or request attention before reporting the
@@ -375,10 +391,28 @@ When review is required, the reviewer must not have implemented the reviewed
 surface. Do not report completion while required verification is pending or
 failed.
 
+Require an independent reviewer to label every candidate finding in the
+human-readable response:
+
+- `BLOCKER`: if accepted, safe or correct delivery is impossible or a required
+  gate remains incomplete; resolve it or keep the task blocked.
+- `MAJOR`: if accepted, correctness, usability, or a contract is materially
+  affected; resolve it before completion unless the user explicitly changes
+  scope or acceptance without bypassing a safety or authority invariant.
+- `MINOR`: a non-blocking improvement; it does not automatically expand scope
+  or consume the focused-recheck budget.
+
+Set `finding_severity` in the fixed handoff block to the highest reported
+severity. Use `none` for executors and reviews with no findings. Validate each
+finding against primary evidence and acceptance criteria; accept, reject,
+upgrade, or downgrade it before integration. Finding severity never activates
+independent review and never replaces the residual-risk gate.
+
 For every delegated handoff, require normal human-readable Markdown first and
 then exactly one fixed `<task_handoff>` block using the project task-packet
-schema. Every field must be present, empty values are `none`, the block is not
-inside a code fence, and no text follows `</task_handoff>`.
+schema, including `finding_severity`. Every field must be present, empty values
+are `none`, the block is not inside a code fence, and no text follows
+`</task_handoff>`.
 
 ## Enforce phase and completion invariants
 
