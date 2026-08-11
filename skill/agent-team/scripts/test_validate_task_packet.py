@@ -239,12 +239,46 @@ class TaskPacketValidatorTests(unittest.TestCase):
             "template missing dispatch heading: ### Mission", errors
         )
 
+    def test_template_requires_exact_dispatch_heading(self) -> None:
+        errors = validate_template(
+            template().replace("### Mission", "### Missionary")
+        )
+        self.assertIn(
+            "template missing dispatch heading: ### Mission", errors
+        )
+
     def test_template_requires_finding_severity(self) -> None:
         errors = validate_template(
             template().replace("finding_severity: none", "")
         )
         self.assertIn(
             "template missing handoff field: finding_severity:", errors
+        )
+
+    def test_template_requires_handoff_field_inside_block(self) -> None:
+        errors = validate_template(
+            template().replace(
+                "finding_severity: none", "notes: finding_severity: none"
+            )
+        )
+        self.assertIn(
+            "template missing handoff field: finding_severity:", errors
+        )
+
+    def test_template_requires_exactly_one_handoff_block(self) -> None:
+        duplicate = template() + """
+<task_handoff>
+finding_severity: none
+goal_alignment: aligned
+scope_delta: none
+new_assumptions: none
+next_authorized_step: none
+</task_handoff>
+"""
+        errors = validate_template(duplicate)
+        self.assertIn(
+            "template requires exactly one <task_handoff> block, found 2",
+            errors,
         )
 
 

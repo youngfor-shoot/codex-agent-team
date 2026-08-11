@@ -10,6 +10,11 @@ from pathlib import Path
 
 
 FIELD_RE = re.compile(r"^- `([^`]+)`: `([^`]*)`\s*$", re.MULTILINE)
+HANDOFF_BLOCK_RE = re.compile(
+    r"^<task_handoff>[ \t]*\r?\n(.*?)^</task_handoff>[ \t]*$",
+    re.MULTILINE | re.DOTALL,
+)
+HANDOFF_FIELD_RE = re.compile(r"^([a-z_]+):[ \t]*.*$")
 REQUIRED_FIELDS = {
     "task_id",
     "status",
@@ -52,13 +57,25 @@ ALLOWED_REVIEW_GATES = {"required", "not-required"}
 ALLOWED_REVIEW_STATUSES = {"pending", "passed", "not-applicable"}
 
 
+def exact_lines(text: str) -> set[str]:
+    return {line.rstrip() for line in text.splitlines()}
+
+
 def section(text: str, heading: str) -> str:
-    start = text.find(heading)
-    if start < 0:
+    lines = text.splitlines()
+    start = next(
+        (index for index, line in enumerate(lines) if line.rstrip() == heading),
+        None,
+    )
+    if start is None:
         return ""
-    body_start = start + len(heading)
-    next_heading = text.find("\n## ", body_start)
-    return text[body_start:] if next_heading < 0 else text[body_start:next_heading]
+
+    body: list[str] = []
+    for line in lines[start + 1 :]:
+        if line.startswith("## "):
+            break
+        body.append(line)
+    return "\n".join(body)
 
 
 def bool_field(fields: dict[str, str], key: str, errors: list[str]) -> bool | None:
@@ -79,17 +96,31 @@ def unchecked_items(text: str, heading: str) -> list[str]:
 
 def validate_template(text: str) -> list[str]:
     errors: list[str] = []
+    lines = exact_lines(text)
     for field in sorted(REQUIRED_FIELDS):
         if f"`{field}`" not in text:
             errors.append(f"template missing field: {field}")
     for heading in sorted(REQUIRED_HEADINGS):
-        if heading not in text:
+        if heading not in lines:
             errors.append(f"template missing heading: {heading}")
     for heading in sorted(REQUIRED_DISPATCH_HEADINGS):
-        if heading not in text:
+        if heading not in lines:
             errors.append(f"template missing dispatch heading: {heading}")
+
+    handoff_blocks = HANDOFF_BLOCK_RE.findall(text)
+    if len(handoff_blocks) != 1:
+        errors.append(
+            "template requires exactly one <task_handoff> block, "
+            f"found {len(handoff_blocks)}"
+        )
+    handoff_fields = {
+        f"{match.group(1)}:"
+        for block in handoff_blocks
+        for line in block.splitlines()
+        if (match := HANDOFF_FIELD_RE.fullmatch(line.rstrip()))
+    }
     for handoff_field in sorted(REQUIRED_HANDOFF_FIELDS):
-        if handoff_field not in text:
+        if handoff_field not in handoff_fields:
             errors.append(f"template missing handoff field: {handoff_field}")
     return errors
 
@@ -97,12 +128,13 @@ def validate_template(text: str) -> list[str]:
 def validate_packet(text: str, require_complete: bool) -> list[str]:
     errors: list[str] = []
     fields = dict(FIELD_RE.findall(text))
+    lines = exact_lines(text)
 
     for field in sorted(REQUIRED_FIELDS):
         if field not in fields:
             errors.append(f"missing field: {field}")
     for heading in sorted(REQUIRED_HEADINGS):
-        if heading not in text:
+        if heading not in lines:
             errors.append(f"missing heading: {heading}")
 
     completion = section(text, "## Completion Criteria")

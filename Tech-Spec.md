@@ -101,6 +101,18 @@ It supports the same `Verify` and explicit `Install` modes, creates a backup of
 existing managed destinations before replacement, compares normalized SHA-256
 hashes, and leaves every unrelated global Agent file untouched.
 
+After a successful worker-profile install and post-copy hash check, the helper
+must explicitly return exit code zero so an earlier caller-side drift probe
+cannot leak a stale nonzero status into the successful result.
+
+## Task-Template Validation
+
+Template headings are matched as complete Markdown lines, not substrings.
+Every valid template contains exactly one `<task_handoff>` block, and each
+required handoff field appears as its own field line inside that block. A field
+name in surrounding prose or a heading such as `### Missionary` does not
+satisfy the contract.
+
 ## Public Distribution
 
 - `README.md` owns public setup, usage, and verification guidance.
@@ -160,3 +172,7 @@ python "$env:USERPROFILE/.codex/skills/.system/skill-creator/scripts/quick_valid
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-agent-team.ps1 -Mode Verify
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-worker-agents.ps1 -Mode Verify
 ```
+
+Runtime discovery, actual child spawning, selected model, reasoning effort,
+and elapsed time require a separate fresh-task observation. Static tests and CI
+validate the published contract but do not prove those runtime facts.

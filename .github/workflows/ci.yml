@@ -41,7 +41,11 @@ jobs:
           Set-Content -LiteralPath (Join-Path $agentDestination 'luna-worker.toml') -Value 'preexisting-profile'
           ./scripts/sync-agent-team.ps1 -Mode Install -Destination $destination -Confirm:$false
           ./scripts/sync-agent-team.ps1 -Mode Verify -Destination $destination
+          $global:LASTEXITCODE = 7
           ./scripts/sync-worker-agents.ps1 -Mode Install -Destination $agentDestination -Confirm:$false
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Successful worker synchronization did not reset the process exit code.'
+          }
           ./scripts/sync-worker-agents.ps1 -Mode Verify -Destination $agentDestination
           if ((Get-Content -Raw -LiteralPath (Join-Path $agentDestination 'unrelated.toml')).Trim() -ne 'preserve-me') {
             throw 'Worker synchronization changed an unrelated Agent file.'

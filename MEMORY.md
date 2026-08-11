@@ -6,6 +6,17 @@ Store durable decisions for the canonical `agent-team` Skill source.
 
 ## Durable Decisions
 
+### 2026-08-11: Validation is structural and evidence claims are scoped
+
+- Task-template validation matches exact Markdown heading lines and requires
+  exactly one `<task_handoff>` block. Required handoff fields must be field
+  lines inside that block; prose substrings and prefix headings do not count.
+- A successful worker-profile install explicitly exits zero after the final
+  hash check so an earlier drift probe cannot leak a stale failure status.
+- Static tests cover the profile, synchronization, and template contracts, and
+  CI is configured to re-run them. Runtime discovery, child spawning, selected
+  model, reasoning effort, and timing require separate fresh-task evidence.
+
 ### 2026-08-03: Temporary implementation uses optional Luna and Terra lanes
 
 - The repository versions `luna-worker.toml` and `terra-worker.toml` as
@@ -26,15 +37,15 @@ Store durable decisions for the canonical `agent-team` Skill source.
 - `scripts/sync-worker-agents.ps1` manages only the two named runtime profiles,
   preserves unrelated agent files, backs up conflicting managed copies, and
   verifies normalized SHA-256 hashes after installation.
-- A representative forward test observed Agent Team spawn `luna_worker` for a
-  fully specified slug task and `terra_worker` for a transactional lease task.
-  The test also exercised same-lane Luna correction, bounded Terra retry, and a
-  persistence-only review gate. Exact model and effort were validated in a
-  separate direct profile test because the Agent Team runtime status did not
-  expose those fields.
-- The representative forward test took about 12.4 minutes. Terra and independent
-  review therefore remain bounded tools for justified complexity or residual
-  risk, not default steps for routine implementation.
+- Maintainer-local forward testing was reported for Luna/Terra routing,
+  correction, escalation, and review-gate separation, but this repository does
+  not contain a reproducible public trace of those runs. Public verification
+  therefore contains reproducible evidence for the static profile contract,
+  synchronization behavior, and task-packet validation only; do not claim
+  runtime discovery, selected model, reasoning effort, or elapsed-time
+  compatibility from repository evidence alone.
+- Terra and independent review remain bounded tools for justified complexity
+  or residual risk, not default phases for routine implementation.
 
 ### 2026-08-02: Dispatch presentation and finding severity are additive
 

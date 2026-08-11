@@ -65,17 +65,18 @@ portable when the companion roles are unavailable.
 - A fresh temporary destination can be installed and then verified on Windows.
 - A tracked-file scan finds no credential signatures or maintainer-specific
   absolute paths.
-- Template validation rejects a child-contract template that omits the three
-  dispatch sections or the review-finding severity field.
+- Template validation requires the three exact dispatch headings and exactly
+  one handoff block, with every required handoff field inside that block.
 - Companion Agent profiles contain the expected names, models, reasoning
   efforts, descriptions, and developer instructions.
 - A temporary Agent destination can install and verify both profiles without
   modifying unrelated files.
 - A fresh Codex task can discover and run both companion roles with
-  `fork_turns: none`.
-- Skill routing tests distinguish specification-determined work from
-  context-heavy or higher-risk implementation and preserve the existing
-  risk-matched review gate.
+  `fork_turns: none`; static tests and CI do not substitute for this runtime
+  evidence.
+- Static contract tests preserve the Skill-to-reference route, the
+  specification-determined versus context-heavy lane boundary, corrected
+  one-time escalation, and independence from the risk-matched review gate.
 
 ## Non-goals
 

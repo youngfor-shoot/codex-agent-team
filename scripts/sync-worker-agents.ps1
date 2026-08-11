@@ -127,3 +127,4 @@ Write-Output "Installed worker Agent runtime profiles ($($states.Count) files)."
 if ($null -ne $backupPath) {
     Write-Output "Backup: $backupPath"
 }
+exit 0
