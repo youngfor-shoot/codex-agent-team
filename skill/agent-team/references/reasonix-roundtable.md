@@ -1,9 +1,11 @@
-# Reasonix Roundtable Contract
+# Reasonix Roundtable Contract (Optional Adapter)
 
 Read this file only when the user explicitly requests Reasonix or
 AgentParliament, or when the independent-review gate selects AgentParliament as
-its single backend. AgentParliament is read-only evidence, never the canonical
-writer or final authority.
+its single backend. AgentParliament is an optional adapter: the default review
+backend is `native-verifier` (see `verification-backends.md`), and this
+roundtable is never required for Agent Team to operate. AgentParliament is
+read-only evidence, never the canonical writer or final authority.
 
 ## Runtime profile and discovery
 

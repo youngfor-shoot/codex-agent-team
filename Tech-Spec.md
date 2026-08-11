@@ -5,7 +5,8 @@
 - Canonical source: `skill/agent-team/`
 - Runtime copy: `~/.codex/skills/agent-team`
 - Synchronization direction: canonical source to runtime copy only
-- Repository-only helper: `scripts/sync-agent-team.ps1`
+- Repository helpers: `scripts/sync-agent-team.ps1` (Windows) and
+  `scripts/sync-agent-team.py` (cross-platform, Python 3.10+)
 
 The Skill folder keeps the standard Codex layout:
 
@@ -14,6 +15,7 @@ skill/agent-team/
   SKILL.md
   agents/openai.yaml
   references/*.md
+  templates/*.md
   scripts/*.py
 agents/
   luna-worker.toml
@@ -83,14 +85,19 @@ risk-matched review gate.
 
 ## Managed Surface
 
-The synchronizer considers only:
+The synchronizers consider only:
 
 - `SKILL.md`
-- Markdown files below `references/`
+- Markdown files below `references/` and `templates/`
 - YAML files below `agents/`
 - Python files below `scripts/`
 
 It ignores bytecode, `__pycache__`, dotfiles, credentials, and every other file.
+
+The Python helper `scripts/sync-agent-team.py` mirrors the PowerShell helper
+with `--mode Verify|Install`, `--destination <path>`, and `--yes` for
+non-interactive installs; it uses the same managed-file set, backup, and
+normalized-SHA-256 verification semantics.
 
 The separate `scripts/sync-worker-agents.ps1` helper manages exactly:
 
@@ -162,16 +169,26 @@ destination files remain untouched.
   Git metadata, Obsidian vaults, and explicit protected paths.
 - Keep verification commands dependency-free and execute them with
   `shell=False`; this is not an operating-system sandbox.
+- The child environment uses a cross-platform allowlist (Windows and POSIX
+  variables) plus any names frozen via `--env-passthrough`; the contract file
+  is marked read-only after `init`.
 
 ## Verification Commands
 
 ```powershell
 python -m unittest discover -s skill/agent-team/scripts -p "test_*.py"
 python -m unittest discover -s scripts -p "test_*.py"
+python skill/agent-team/scripts/validate_task_packet.py skill/agent-team/templates/task-packet.md --template
+python skill/agent-team/scripts/validate_task_packet.py examples/in-progress-task-packet.md
+python skill/agent-team/scripts/validate_task_packet.py examples/completed-task-packet.md --require-complete
 python "$env:USERPROFILE/.codex/skills/.system/skill-creator/scripts/quick_validate.py" skill/agent-team
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-agent-team.ps1 -Mode Verify
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-worker-agents.ps1 -Mode Verify
 ```
+
+CI runs Python tests and the template/example validation on Linux, macOS, and
+Windows, exercises the cross-platform Python installer on Linux and macOS, and
+runs the PowerShell install/verify smoke cycle on Windows.
 
 Runtime discovery, actual child spawning, selected model, reasoning effort,
 and elapsed time require a separate fresh-task observation. Static tests and CI

@@ -1,6 +1,7 @@
 ---
 name: agent-team
-description: 'Preview and coordinate the smallest safe Agent setup. Independently select execution topology (one Agent, temporary team, or persistent team), wakeup mode (none, heartbeat, or cron), convergence (single pass, evidence loop, or phase gates), verification (deterministic checks plus risk-matched independent review), and human gates. Use native Codex subagents for temporary work, user-owned Codex tasks for persistent teams, Automation for explicitly requested wakeups, and a Reasonix-only AgentParliament roundtable for bounded research, review, or decision challenge. Use when the user invokes `$agent-team`, requests an Agent Team preview, says "自动组队" or "用多 Agent 完成/审查/做技术方案决策", asks to choose temporary versus persistent, requests later monitoring, or presents a medium/large task with at least two independent outcomes or a named need for independent verification. Explicit invocation authorizes topology selection; an implicit medium/large-task trigger recommends only and never creates Agents, tasks, or Automations.'
+version: 0.2.0
+description: 'Preview and coordinate the smallest safe Agent setup. Independently select execution topology (one Agent, temporary team, or persistent team), wakeup mode (none, heartbeat, or cron), convergence (single pass, evidence loop, or phase gates), verification (deterministic checks plus risk-matched independent review), and human gates. Use native Codex subagents for temporary work, user-owned Codex tasks for persistent teams, Automation for explicitly requested wakeups, a zero-dependency native verifier for the independent-review gate, and an optional Reasonix-only AgentParliament roundtable for bounded research, review, or decision challenge. Use when the user invokes `$agent-team`, requests an Agent Team preview, says "自动组队" or "用多 Agent 完成/审查/做技术方案决策", asks to choose temporary versus persistent, requests later monitoring, or presents a medium/large task with at least two independent outcomes or a named need for independent verification. Explicit invocation authorizes topology selection; an implicit medium/large-task trigger recommends only and never creates Agents, tasks, or Automations.'
 ---
 
 # Agent Team
@@ -61,7 +62,7 @@ Return a compact preview containing:
 - task size and the evidence for it;
 - recommended topology, wakeup, convergence, verification gate, and human gates;
 - proposed workstreams, ownership, and integration order;
-- proposed AgentParliament tool and role, or `none`;
+- proposed review backend (`native-verifier` by default, or an optional adapter), or `none`;
 - allowed mutation boundary and deterministic verification;
 - execution budget and stop conditions;
 - monitoring mode and the status fields the user will see.
@@ -69,24 +70,31 @@ Return a compact preview containing:
 Before an authorized run makes its first delegated or AgentParliament call,
 emit the same compact preview in commentary. Report a preferred backend only as
 configuration; report the backend that actually ran only after runtime evidence
-returns.
+returns. When AgentParliament is unavailable, fall back to `native-verifier`
+for the same named residual risk and report the substitution; never imitate an
+MCP call with a shell command.
 
 ## Keep long external calls observable
 
-When the selected review backend is AgentParliament, read
-`references/reasonix-roundtable.md` before its first call. Follow its bounded
-timeouts, scope preflight, discovery, cancellation, progress, and transport
-rules. Long duration never authorizes Automation, persistence, or retries.
+The default independent-review backend is `native-verifier`, which needs no
+external integration. Read `references/verification-backends.md` before
+selecting a review backend. When the selected review backend is
+AgentParliament, read `references/reasonix-roundtable.md` before its first
+call. Follow its bounded timeouts, scope preflight, discovery, cancellation,
+progress, and transport rules. Long duration never authorizes Automation,
+persistence, or retries.
 
 ## Establish the controller contract
 
 Before delegation:
 
 1. Read applicable project instructions and persistent project context.
-2. Inspect which native Codex subagent, thread, and AgentParliament tools are
+2. Inspect which native Codex subagent, thread, and optional adapter tools are
    actually callable. Native team selection does not require AgentParliament.
-   If the user explicitly requests Reasonix or AgentParliament and
-   those tools are missing, report that bounded blocker; never imitate an MCP
+   The default `native-verifier` backend is always available. If the user
+   explicitly requests Reasonix or AgentParliament and
+   those tools are missing, report that bounded blocker and fall back to
+   `native-verifier` for the same named residual risk; never imitate an MCP
    call with an ordinary shell command.
 3. Create an intent ledger with the original request, explicit overrides,
    canonical objective, approved scope, pending decisions, forbidden
@@ -253,8 +261,8 @@ independent read-only review.
    Luna/Terra contract in `references/implementation-lanes.md`.
 3. Run focused deterministic checks and controller-owned whole-task checks.
 4. When the review gate is `required`, send its bounded question and scope to
-   one backend: a native read-only verifier or AgentParliament, not both for the
-   same risk.
+   exactly one backend: `native-verifier` by default, or one optional adapter
+   such as AgentParliament, not both for the same risk.
 5. Validate each finding, fix only confirmed issues, and normally close fixes
    through regression checks. Use at most one focused independent recheck.
 6. Do not use `verify_implementation` in the current Reasonix-only deployment;
@@ -264,10 +272,11 @@ independent read-only review.
 ### Review existing work
 
 1. Preserve a read-only boundary unless the user also asks for fixes.
-2. Use the Reasonix roundtable only when business context, call chains, or an
-   independent challenge materially improves the review.
+2. Use `native-verifier` by default. Use the Reasonix roundtable only when
+   business context, call chains, or an independent challenge materially
+   improves the review and the user requested it or configuration names it.
 3. Put the diff, relevant sources, tests, and acceptance criteria into the
-   roundtable question; use `test_audit` only as an additional bounded atomic
+   review question; use `test_audit` only as an additional bounded atomic
    audit when deterministic coverage mapping is required.
 4. Let Codex reproduce or source-check findings before reporting them.
 5. Do not mutate files during a review-only request.
@@ -275,7 +284,8 @@ independent read-only review.
 ### Make a technical or architectural decision
 
 1. Let Codex form an initial hypothesis and explicit decision criteria.
-2. Use the Reasonix roundtable only for an explicit review request or a named
+2. Use `native-verifier` by default. Use the Reasonix roundtable only for an
+   explicit user review request, configuration-named use, or a named
    high-impact uncertainty that the available evidence cannot settle directly.
 3. Preserve minority objections and unresolved evidence gaps.
 4. Use the roundtable only when multiple bounded perspectives justify its
@@ -284,22 +294,26 @@ independent read-only review.
 
 ### Analyze content or Obsidian material
 
-1. Default all AgentParliament work to read-only.
+1. Default all review work to read-only.
 2. Use `phase-gated` when identity, publication, or factual verification needs
    a human or evidence checkpoint.
-3. Use the Reasonix roundtable only when a named factual or reasoning blind
-   spot remains and the added perspectives justify the cost.
+3. Use `native-verifier` by default. Use the Reasonix roundtable only when a
+   named factual or reasoning blind spot remains, the user requested it or
+   configuration names it, and the added perspectives justify the cost.
 4. Let Codex synthesize the final recommendation in the user's voice.
 5. Never use `verify_implementation` against an Obsidian vault.
 6. Write to the vault only when the user explicitly asks and project governance
    permits the exact destination.
 
-## Run the Reasonix roundtable
+## Run a review backend
 
-Use AgentParliament only when the verification gate selected it or the user
-explicitly requested it. Read `references/reasonix-roundtable.md`, ask the one
-recorded review question, and keep Codex as chair and final authority. Native
-temporary workstreams still route through `orchestrate-parallel-work`.
+Select exactly one backend for a `required` review gate:
+`native-verifier` by default, or an optional adapter (AgentParliament) when the
+user explicitly requested it or configuration names it. Read
+`references/verification-backends.md` before choosing; when AgentParliament is
+selected, read `references/reasonix-roundtable.md`, ask the one recorded review
+question, and keep Codex as chair and final authority. Native temporary
+workstreams still route through `orchestrate-parallel-work`.
 
 ## Run a temporary team
 
@@ -451,7 +465,8 @@ source.
   keys to a delegated prompt.
 - Never create persistent tasks from implicit Skill triggering, ordinary
   multi-agent wording, or a persistence guess.
-- Keep AgentParliament read-only tools read-only.
+- Keep AgentParliament read-only tools read-only; never imitate an MCP call
+  with a shell command when an optional adapter is unavailable.
 - Do not invoke `verify_implementation` while the active profile is
   Reasonix-only; it has no approved unattended writable backend.
 - Never set an Obsidian vault or another protected knowledge store as the
@@ -486,7 +501,7 @@ Report:
 - heartbeat or cron identity and stop condition when Automation was created;
 - the review question, backend, and pass actually used, or why review was
   `not-required`;
-- which AgentParliament tools and Reasonix seats actually ran, when any;
+- which review backend and Reasonix seats actually ran, when any;
 - which findings Codex accepted or rejected;
 - phase status, deterministic verification results, and whole-task invariant
   result;

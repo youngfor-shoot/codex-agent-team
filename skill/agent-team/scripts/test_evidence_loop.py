@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -77,6 +79,7 @@ class EvidenceLoopTests(unittest.TestCase):
             frozen_path=[],
             controller_harness=harnesses,
             protected_path=protected_paths or [],
+            env_passthrough=[],
             max_iterations=max_iterations,
             max_minutes=max_minutes,
             command_timeout=2,
@@ -247,6 +250,7 @@ class EvidenceLoopTests(unittest.TestCase):
         evidence_loop.init_run(self.init_args())
         state = self.load()
         contract_path = Path(state["contract_file"])
+        os.chmod(contract_path, stat.S_IRUSR | stat.S_IWUSR)
         contract = json.loads(contract_path.read_text(encoding="utf-8"))
         contract["checks"] = [["fake-test-runner"]]
         contract_path.write_text(json.dumps(contract), encoding="utf-8")
@@ -465,6 +469,87 @@ class EvidenceLoopTests(unittest.TestCase):
         self.assertTrue(
             self.load()["last_verification"]["checks"][0]["timed_out"]
         )
+
+    def test_contract_file_is_read_only_after_init(self) -> None:
+        evidence_loop.init_run(self.init_args())
+        contract_path = Path(self.load()["contract_file"])
+        mode = stat.S_IMODE(contract_path.stat().st_mode)
+        self.assertEqual(mode & stat.S_IWRITE, 0)
+
+    def test_contract_file_write_after_readonly_raises(self) -> None:
+        evidence_loop.init_run(self.init_args())
+        contract_path = Path(self.load()["contract_file"])
+        with self.assertRaises(OSError):
+            with contract_path.open("a", encoding="utf-8"):
+                pass
+
+    def test_sanitized_environment_includes_posix_variables(self) -> None:
+        previous = {
+            name: evidence_loop.os.environ.get(name) for name in ("HOME", "LANG", "LOGNAME")
+        }
+        evidence_loop.os.environ["HOME"] = "/home/test"
+        evidence_loop.os.environ["LANG"] = "en_US.UTF-8"
+        evidence_loop.os.environ["LOGNAME"] = "test"
+        try:
+            sanitized = evidence_loop.sanitized_environment()
+        finally:
+            for name, value in previous.items():
+                if value is None:
+                    evidence_loop.os.environ.pop(name, None)
+                else:
+                    evidence_loop.os.environ[name] = value
+        self.assertEqual(sanitized.get("HOME"), "/home/test")
+        self.assertEqual(sanitized.get("LANG"), "en_US.UTF-8")
+        self.assertEqual(sanitized.get("LOGNAME"), "test")
+
+    def test_env_passthrough_adds_named_variables(self) -> None:
+        previous = {
+            name: evidence_loop.os.environ.get(name)
+            for name in ("AGENT_TEAM_CUSTOM", "AGENT_TEAM_BLOCKED")
+        }
+        evidence_loop.os.environ["AGENT_TEAM_CUSTOM"] = "allowed"
+        evidence_loop.os.environ["AGENT_TEAM_BLOCKED"] = "blocked"
+        try:
+            sanitized = evidence_loop.sanitized_environment(("AGENT_TEAM_CUSTOM",))
+        finally:
+            for name, value in previous.items():
+                if value is None:
+                    evidence_loop.os.environ.pop(name, None)
+                else:
+                    evidence_loop.os.environ[name] = value
+        self.assertEqual(sanitized.get("AGENT_TEAM_CUSTOM"), "allowed")
+        self.assertNotIn("AGENT_TEAM_BLOCKED", sanitized)
+
+    def test_env_passthrough_is_frozen_into_contract(self) -> None:
+        args = self.init_args()
+        args.env_passthrough = ["AGENT_TEAM_CUSTOM"]
+        evidence_loop.init_run(args)
+        contract_path = Path(self.load()["contract_file"])
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+        self.assertEqual(contract["env_passthrough"], ["AGENT_TEAM_CUSTOM"])
+
+    def test_env_passthrough_rejects_invalid_name(self) -> None:
+        with self.assertRaises(evidence_loop.LoopError):
+            evidence_loop.validate_env_passthrough(("NOT A VALID NAME",))
+
+    def test_run_check_passes_frozen_environment(self) -> None:
+        script = self.harness(
+            "import os\n"
+            "print('CUSTOM=' + os.environ.get('AGENT_TEAM_CUSTOM', 'unset'))\n"
+        )
+        args = self.init_args(command=[sys.executable, str(script)])
+        args.env_passthrough = ["AGENT_TEAM_CUSTOM"]
+        evidence_loop.os.environ["AGENT_TEAM_CUSTOM"] = "frozen-value"
+        try:
+            evidence_loop.init_run(args)
+            evidence_loop.next_iteration(
+                self.state_args(worker_run_id="worker-env-pass")
+            )
+            evidence_loop.verify_iteration(self.state_args())
+        finally:
+            evidence_loop.os.environ.pop("AGENT_TEAM_CUSTOM", None)
+        stdout = self.load()["last_verification"]["checks"][0]["stdout"]
+        self.assertIn("CUSTOM=frozen-value", stdout)
 
 
 if __name__ == "__main__":
