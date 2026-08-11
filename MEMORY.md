@@ -6,6 +6,32 @@ Store durable decisions for the canonical `agent-team` Skill source.
 
 ## Durable Decisions
 
+### 2026-08-12: v0.2 adoption round (issue #2 triage)
+
+- `native-verifier` is the default independent-review backend: a separate
+  read-only Codex context, zero external dependencies. AgentParliament/Reasonix
+  is an optional adapter documented in
+  `skill/agent-team/references/verification-backends.md`; it is never required
+  for Agent Team to operate and falls back to `native-verifier` when
+  unavailable.
+- The evidence-loop child environment is cross-platform: the allowlist now
+  includes POSIX variables (`HOME`, `LANG`, `USER`, `TMPDIR`, etc.) alongside
+  the Windows set. `--env-passthrough <NAME>` freezes variable names into the
+  contract; values are read from the current process at check time.
+- The contract file is marked read-only after `init` (best effort; contract
+  hashes remain the integrity guarantee).
+- Canonical task-packet template and `<task_handoff>` schema live in
+  `skill/agent-team/templates/`; two validated worked examples live in
+  `examples/`; CI validates all three.
+- `scripts/sync-agent-team.py` mirrors the PowerShell helper on POSIX
+  (`--mode Verify|Install`, `--destination`, `--yes`); both tools manage
+  `SKILL.md`, `agents/*.{yaml,yml}`, `references/*.md`, `templates/*.md`, and
+  `scripts/*.py`.
+- CI matrix is ubuntu/macos/windows for Python tests and template/example
+  validation; the Python installer is smoke-tested on ubuntu/macos.
+- SKILL.md frontmatter now carries `version: 0.2.0`; `CHANGELOG.md` added.
+- PR #1 (Luna/Terra lanes) merged to main at `853d1ac`.
+
 ### 2026-08-11: Validation is structural and evidence claims are scoped
 
 - Task-template validation matches exact Markdown heading lines and requires

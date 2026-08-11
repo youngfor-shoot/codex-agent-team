@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -49,6 +50,7 @@ FORBIDDEN_EXECUTABLES = {
 }
 REASON_CODE_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}$")
 IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,254}$")
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 REDACTIONS = (
     re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b"),
@@ -266,6 +268,14 @@ def write_json_atomic(path: Path, value: dict[str, Any]) -> None:
         raise LoopError(f"Cannot write state file {path}: {exc}") from exc
 
 
+def make_readonly(path: Path) -> None:
+    """Best-effort read-only marking; contract hashes remain the guarantee."""
+    try:
+        os.chmod(path, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
+    except OSError:
+        pass
+
+
 def write_state(path: Path, state: dict[str, Any]) -> None:
     state["revision"] += 1
     state["state_hash"] = state_hash(state)
@@ -466,8 +476,9 @@ def source_fingerprint(worktree: Path, base_commit: str) -> str:
     return digest.hexdigest()
 
 
-def sanitized_environment() -> dict[str, str]:
+def sanitized_environment(passthrough: Sequence[str] = ()) -> dict[str, str]:
     allowed = {
+        # Windows
         "APPDATA",
         "COMMONPROGRAMFILES",
         "COMMONPROGRAMFILES(X86)",
@@ -490,8 +501,36 @@ def sanitized_environment() -> dict[str, str]:
         "TMP",
         "USERPROFILE",
         "WINDIR",
+        # POSIX
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "LC_COLLATE",
+        "LC_CTYPE",
+        "LC_MESSAGES",
+        "LC_MONETARY",
+        "LC_NUMERIC",
+        "LC_TIME",
+        "LOGNAME",
+        "PWD",
+        "SHELL",
+        "TMPDIR",
+        "USER",
+        "XDG_CACHE_HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_RUNTIME_DIR",
     }
+    allowed.update(name.upper() for name in passthrough)
     return {key: value for key, value in os.environ.items() if key.upper() in allowed}
+
+
+def validate_env_passthrough(names: Sequence[str]) -> list[str]:
+    normalized = sorted({name.upper() for name in names})
+    for name in normalized:
+        if not ENV_NAME_RE.fullmatch(name):
+            raise LoopError(f"Invalid environment variable name for passthrough: {name}")
+    return normalized
 
 
 def create_windows_kill_job(process: subprocess.Popen[bytes]) -> int:
@@ -618,7 +657,10 @@ def windows_wrapped_command(command: list[str]) -> list[str]:
 
 
 def run_check(
-    command: list[str], worktree: Path, timeout_seconds: int
+    command: list[str],
+    worktree: Path,
+    timeout_seconds: int,
+    passthrough: Sequence[str] = (),
 ) -> dict[str, Any]:
     started = time.monotonic()
     windows_job: int | None = None
@@ -632,7 +674,7 @@ def run_check(
                 stdout=stdout_file,
                 stderr=stderr_file,
                 shell=False,
-                env=sanitized_environment(),
+                env=sanitized_environment(passthrough),
                 creationflags=(
                     subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
                 ),
@@ -699,6 +741,8 @@ def init_run(args: argparse.Namespace) -> int:
     for protected in protected_paths:
         if is_within(worktree, protected) or is_within(protected, worktree):
             raise LoopError(f"Worktree overlaps a protected path: {protected}")
+
+    env_passthrough = validate_env_passthrough(args.env_passthrough)
 
     checks = [parse_command(raw) for raw in args.check_json]
     frozen_paths = [Path(value).expanduser().resolve() for value in args.frozen_path]
@@ -768,6 +812,7 @@ def init_run(args: argparse.Namespace) -> int:
         },
         "require_review": True,
         "protected_paths": [str(path) for path in protected_paths],
+        "env_passthrough": env_passthrough,
         "created_at": isoformat(created),
         "deadline": isoformat(created + timedelta(minutes=args.max_minutes)),
     }
@@ -795,6 +840,7 @@ def init_run(args: argparse.Namespace) -> int:
         if state_path.exists() or contract_path.exists():
             raise LoopError(f"Run control files already exist for: {state_path}")
         write_json_atomic(contract_path, contract)
+        make_readonly(contract_path)
         write_state(state_path, state)
     print_summary(state, contract)
     return 0
@@ -870,6 +916,7 @@ def verify_iteration(args: argparse.Namespace) -> int:
             return 3
 
         results: list[dict[str, Any]] = []
+        passthrough = contract.get("env_passthrough", [])
         for command in contract["checks"]:
             remaining = int(
                 (parse_time(contract["deadline"]) - utc_now()).total_seconds()
@@ -885,7 +932,7 @@ def verify_iteration(args: argparse.Namespace) -> int:
                 1,
                 min(contract["limits"]["command_timeout_seconds"], remaining),
             )
-            results.append(run_check(command, worktree, timeout_seconds))
+            results.append(run_check(command, worktree, timeout_seconds, passthrough))
             if utc_now() >= parse_time(contract["deadline"]):
                 state["status"] = "stopped_time"
                 state["stop_reason"] = "max_elapsed_time"
@@ -1161,6 +1208,7 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument("--frozen-path", action="append", default=[])
     init_parser.add_argument("--controller-harness", action="append", default=[])
     init_parser.add_argument("--protected-path", action="append", default=[])
+    init_parser.add_argument("--env-passthrough", action="append", default=[])
     init_parser.add_argument(
         "--max-iterations", type=bounded_int(1, 10), default=4
     )

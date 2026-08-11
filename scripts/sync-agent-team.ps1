@@ -62,6 +62,7 @@ function Test-ManagedRelativePath {
     switch ($parts[0].ToLowerInvariant()) {
         "agents" { return $extension -in @(".yaml", ".yml") }
         "references" { return $extension -eq ".md" }
+        "templates" { return $extension -eq ".md" }
         "scripts" { return $extension -eq ".py" }
         default { return $false }
     }

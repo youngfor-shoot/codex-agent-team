@@ -43,6 +43,8 @@ python $runner init `
   --check-json '["python","C:\\path\\to\\controller-owned\\acceptance.py"]' `
   --controller-harness $harness `
   --protected-path $protected `
+  --env-passthrough GIT_AUTHOR_NAME `
+  --env-passthrough GIT_AUTHOR_EMAIL `
   --max-iterations 4 `
   --max-minutes 45 `
   --command-timeout 900 `
@@ -54,8 +56,15 @@ arguments for the test directory, package scripts, test configuration, and any
 other repository asset that can weaken acceptance. A changed frozen asset
 stops the run as `stopped_acceptance_tampered`.
 
+Pass `--env-passthrough <NAME>` once per variable the child commands need that
+is not already on the cross-platform allowlist (Windows `APPDATA`,
+`PROGRAMFILES`, `TEMP`, `USERPROFILE`, etc.; POSIX `HOME`, `LANG`, `PATH`,
+`USER`, `TMPDIR`, etc.). Only the variable names are frozen into the contract;
+their values are read from the current process environment when a check runs.
+Unknown or invalid names are rejected at `init`.
+
 The objective is stored only as a SHA-256 hash. Initialization writes a
-read-only contract file and mutable state file, then prints both
+contract file marked read-only plus a mutable state file, then prints both
 `contract_hash` and `state_hash`. The controller must pin both returned values
 in its own task context. Never rediscover a changed hash from disk after a
 worker runs.
