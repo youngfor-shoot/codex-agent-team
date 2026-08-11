@@ -250,7 +250,7 @@ class EvidenceLoopTests(unittest.TestCase):
         evidence_loop.init_run(self.init_args())
         state = self.load()
         contract_path = Path(state["contract_file"])
-        os.chmod(contract_path, stat.S_IWRITE | stat.S_IWUSR)
+        os.chmod(contract_path, stat.S_IRUSR | stat.S_IWUSR)
         contract = json.loads(contract_path.read_text(encoding="utf-8"))
         contract["checks"] = [["fake-test-runner"]]
         contract_path.write_text(json.dumps(contract), encoding="utf-8")
