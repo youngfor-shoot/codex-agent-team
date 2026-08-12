@@ -10,11 +10,18 @@ requires-python = ">=3.10"
 
 [tool.ruff]
 target-version = "py310"
-line-length = 88
+line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
 
 [tool.mypy]
 python_version = "3.10"
 strict = true
+exclude = ["test_.*\\.py$"]
+
+[[tool.mypy.overrides]]
+module = ["evidence_loop"]
+# Platform-specific modules imported inside os.name branches.
+ignore_missing_imports = true

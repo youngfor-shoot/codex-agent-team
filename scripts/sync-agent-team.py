@@ -14,6 +14,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from typing import TypedDict
 
 __version__ = "0.3.0"
 
@@ -41,7 +42,7 @@ def managed_relative_path(relative_path: str) -> bool:
     return False
 
 
-def managed_files(root: Path) -> list[dict]:
+def managed_files(root: Path) -> list[dict[str, str]]:
     if not root.is_dir():
         return []
     files = []
@@ -60,7 +61,16 @@ def managed_files(root: Path) -> list[dict]:
     return sorted(files, key=lambda item: item["relative_path"])
 
 
-def compare_managed(source_files: list[dict], destination_files: list[dict]) -> dict:
+class Drift(TypedDict):
+    missing: list[str]
+    changed: list[str]
+    stale: list[str]
+    has_drift: bool
+
+
+def compare_managed(
+    source_files: list[dict[str, str]], destination_files: list[dict[str, str]]
+) -> Drift:
     source_by_path = {item["relative_path"]: item for item in source_files}
     destination_by_path = {item["relative_path"]: item for item in destination_files}
     missing = sorted(set(source_by_path) - set(destination_by_path))
@@ -79,7 +89,7 @@ def compare_managed(source_files: list[dict], destination_files: list[dict]) -> 
     }
 
 
-def write_drift(drift: dict) -> None:
+def write_drift(drift: Drift) -> None:
     groups = (
         ("Missing from runtime", drift["missing"]),
         ("Changed in runtime", drift["changed"]),

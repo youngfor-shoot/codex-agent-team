@@ -243,11 +243,13 @@ class EvidenceLoopTests(unittest.TestCase):
 
     def test_rejects_direct_shell_and_network_executables(self) -> None:
         for executable in ("powershell.exe", "cmd.exe", "curl"):
-            with self.subTest(executable=executable):
-                with self.assertRaises(evidence_loop.LoopError):
-                    evidence_loop.init_run(
-                        self.init_args(command=[executable, "ignored"])
-                    )
+            with (
+                self.subTest(executable=executable),
+                self.assertRaises(evidence_loop.LoopError),
+            ):
+                evidence_loop.init_run(
+                    self.init_args(command=[executable, "ignored"])
+                )
 
     def test_detects_immutable_configuration_tampering(self) -> None:
         evidence_loop.init_run(self.init_args())
@@ -357,11 +359,13 @@ class EvidenceLoopTests(unittest.TestCase):
         evidence_loop.init_run(self.init_args())
         changed = evidence_loop.git_identity(self.worktree)
         changed["branch"] = "unexpected-branch"
-        with mock.patch.object(evidence_loop, "git_identity", return_value=changed):
-            with self.assertRaises(evidence_loop.LoopError):
-                evidence_loop.next_iteration(
-                    self.state_args(worker_run_id="worker-git-change")
-                )
+        with (
+            mock.patch.object(evidence_loop, "git_identity", return_value=changed),
+            self.assertRaises(evidence_loop.LoopError),
+        ):
+            evidence_loop.next_iteration(
+                self.state_args(worker_run_id="worker-git-change")
+            )
 
     def test_review_after_deadline_hard_stops(self) -> None:
         evidence_loop.init_run(self.init_args())
@@ -607,9 +611,8 @@ class EvidenceLoopTests(unittest.TestCase):
     def test_contract_file_write_after_readonly_raises(self) -> None:
         evidence_loop.init_run(self.init_args())
         contract_path = Path(self.load()["contract_file"])
-        with self.assertRaises(OSError):
-            with contract_path.open("a", encoding="utf-8"):
-                pass
+        with self.assertRaises(OSError), contract_path.open("a", encoding="utf-8"):
+            pass
 
     def test_sanitized_environment_includes_posix_variables(self) -> None:
         previous = {

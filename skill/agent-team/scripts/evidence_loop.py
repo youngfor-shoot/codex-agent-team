@@ -13,11 +13,11 @@ import subprocess
 import sys
 import tempfile
 import time
-from contextlib import contextmanager
+from collections.abc import Sequence
+from contextlib import contextmanager, suppress
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Sequence
-
+from typing import Any
 
 __version__ = "0.3.0"
 SCHEMA_VERSION = 1
@@ -292,10 +292,8 @@ def write_json_atomic(path: Path, value: dict[str, Any]) -> None:
 
 def make_readonly(path: Path) -> None:
     """Best-effort read-only marking; contract hashes remain the guarantee."""
-    try:
+    with suppress(OSError):
         os.chmod(path, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
-    except OSError:
-        pass
 
 
 def write_state(path: Path, state: dict[str, Any]) -> None:
@@ -305,7 +303,7 @@ def write_state(path: Path, state: dict[str, Any]) -> None:
 
 
 @contextmanager
-def run_lock(state_path: Path):
+def run_lock(state_path: Path) -> Any:
     lock_path = state_path.with_name(f"{state_path.name}.lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open("a+b") as handle:
@@ -326,11 +324,11 @@ def run_lock(state_path: Path):
         else:
             import fcntl
 
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)  # type: ignore[attr-defined]
             try:
                 yield
             finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)  # type: ignore[attr-defined]
 
 
 def read_bundle(
@@ -619,7 +617,7 @@ def create_windows_kill_job(process: subprocess.Popen[bytes]) -> int:
         error = ctypes.get_last_error()
         kernel32.CloseHandle(job)
         raise OSError(error, "SetInformationJobObject failed")
-    if not kernel32.AssignProcessToJobObject(job, int(process._handle)):
+    if not kernel32.AssignProcessToJobObject(job, int(process._handle)):  # type: ignore[attr-defined]
         error = ctypes.get_last_error()
         kernel32.CloseHandle(job)
         raise OSError(error, "AssignProcessToJobObject failed")
@@ -646,10 +644,8 @@ def terminate_process_tree(
     elif process.poll() is None:
         import signal
 
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)  # type: ignore[attr-defined]
     try:
         process.wait(timeout=15)
         return True
@@ -670,7 +666,7 @@ def read_capped_output(handle: Any, max_chars: int = MAX_CAPTURE_CHARS) -> str:
 
 
 @contextmanager
-def posix_signal_cleanup(process: subprocess.Popen[bytes]):
+def posix_signal_cleanup(process: subprocess.Popen[bytes]) -> Any:
     """On POSIX, kill the child process group when the parent is interrupted.
 
     Windows is covered by the Job Object; POSIX needs an explicit handler so a
@@ -682,10 +678,8 @@ def posix_signal_cleanup(process: subprocess.Popen[bytes]):
     import signal
 
     def _kill_child_group(_signum: int, _frame: Any) -> None:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except (ProcessLookupError, OSError):
-            pass
+        with suppress(ProcessLookupError, OSError):
+            os.killpg(process.pid, signal.SIGKILL)  # type: ignore[attr-defined]
 
     previous_int = signal.signal(signal.SIGINT, _kill_child_group)
     previous_term = signal.signal(signal.SIGTERM, _kill_child_group)
@@ -908,10 +902,8 @@ def init_run(args: argparse.Namespace) -> int:
     except BaseException:
         # Failed init leaves an orphan lock; remove it so the next attempt
         # can lock cleanly. Only safe because init created the lock anew.
-        try:
+        with suppress(OSError):
             lock_path.unlink(missing_ok=True)
-        except OSError:
-            pass
         raise
     print_summary(state, contract)
     return 0
@@ -1325,7 +1317,7 @@ def print_summary(
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
 
-def bounded_int(minimum: int, maximum: int):
+def bounded_int(minimum: int, maximum: int) -> Any:
     def parse(value: str) -> int:
         integer = int(value)
         if not minimum <= integer <= maximum:
@@ -1436,7 +1428,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        return args.handler(args)
+        return int(args.handler(args))
     except LoopError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

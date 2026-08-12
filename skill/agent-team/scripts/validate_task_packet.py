@@ -8,7 +8,6 @@ import re
 import sys
 from pathlib import Path
 
-
 FIELD_RE = re.compile(r"^- `([^`]+)`: `([^`]*)`\s*$", re.MULTILINE)
 HANDOFF_BLOCK_RE = re.compile(
     r"^<task_handoff>[ \t]*\r?\n(.*?)^</task_handoff>[ \t]*$",
