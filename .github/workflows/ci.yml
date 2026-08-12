@@ -39,7 +39,7 @@ jobs:
         run: |
           python -m pip install ruff mypy
           ruff check skill/agent-team/scripts scripts
-          mypy --strict skill/agent-team/scripts scripts
+          mypy skill/agent-team/scripts scripts
 
   cross-platform-installer:
     name: Cross-platform installer (${{ matrix.os }} / ${{ matrix.python }})

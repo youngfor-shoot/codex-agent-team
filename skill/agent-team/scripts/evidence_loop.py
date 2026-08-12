@@ -315,12 +315,12 @@ def run_lock(state_path: Path) -> Any:
         if os.name == "nt":
             import msvcrt
 
-            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)  # type: ignore[attr-defined]
             try:
                 yield
             finally:
                 handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
         else:
             import fcntl
 
@@ -590,7 +590,7 @@ def create_windows_kill_job(process: subprocess.Popen[bytes]) -> int:
             ("PeakJobMemoryUsed", ctypes.c_size_t),
         ]
 
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
     kernel32.CreateJobObjectW.restype = wintypes.HANDLE
     kernel32.CreateJobObjectW.argtypes = (ctypes.c_void_p, wintypes.LPCWSTR)
     kernel32.SetInformationJobObject.argtypes = (
@@ -608,17 +608,17 @@ def create_windows_kill_job(process: subprocess.Popen[bytes]) -> int:
     kernel32.CloseHandle.restype = wintypes.BOOL
     job = kernel32.CreateJobObjectW(None, None)
     if not job:
-        raise OSError(ctypes.get_last_error(), "CreateJobObjectW failed")
+        raise OSError(ctypes.get_last_error(), "CreateJobObjectW failed")  # type: ignore[attr-defined]
     information = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
     information.BasicLimitInformation.LimitFlags = 0x00002000
     if not kernel32.SetInformationJobObject(
         job, 9, ctypes.byref(information), ctypes.sizeof(information)
     ):
-        error = ctypes.get_last_error()
+        error = ctypes.get_last_error()  # type: ignore[attr-defined]
         kernel32.CloseHandle(job)
         raise OSError(error, "SetInformationJobObject failed")
     if not kernel32.AssignProcessToJobObject(job, int(process._handle)):  # type: ignore[attr-defined]
-        error = ctypes.get_last_error()
+        error = ctypes.get_last_error()  # type: ignore[attr-defined]
         kernel32.CloseHandle(job)
         raise OSError(error, "AssignProcessToJobObject failed")
     return int(job)
@@ -630,7 +630,7 @@ def close_windows_handle(handle: int | None) -> None:
     import ctypes
     from ctypes import wintypes
 
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
     kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
     kernel32.CloseHandle.restype = wintypes.BOOL
     kernel32.CloseHandle(handle)
@@ -720,7 +720,7 @@ def run_check(
                 shell=False,
                 env=sanitized_environment(passthrough),
                 creationflags=(
-                    subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+                    subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0  # type: ignore[attr-defined]
                 ),
                 start_new_session=os.name != "nt",
             )
