@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest a change to the Skill, references, helpers, or CI.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the user-visible need, not the implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+    validations:
+      required: true
+  - type: textarea
+    id: invariants
+    attributes:
+      label: Invariants affected
+      description: Which routing rules, safety boundaries, or conformance fixtures would this touch?
+  - type: textarea
+    id: evidence
+    attributes:
+      label: How would you verify it?
+      description: Tests, scenario fixtures, or manual checks you would add.

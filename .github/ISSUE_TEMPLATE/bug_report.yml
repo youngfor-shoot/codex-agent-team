@@ -1,0 +1,41 @@
+name: Bug report
+description: Report a defect in the agent-team Skill, helpers, or CI.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please include enough evidence to reproduce.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Paste the failing command and the exact error output.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `python scripts/sync-agent-team.py --version` or the installed Skill version.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence boundary
+      description: What does this report prove, and what would need fresh evidence to confirm?

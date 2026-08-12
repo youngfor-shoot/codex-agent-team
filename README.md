@@ -164,6 +164,13 @@ history.
 
 See [`SECURITY.md`](SECURITY.md) for private vulnerability reporting.
 
+## Community
+
+- [Discussions](https://github.com/youngfor-shoot/codex-agent-team/discussions)
+  for questions and policy proposals.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) for how to contribute.
+- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) for community standards.
+
 ## Develop and verify
 
 ```powershell
