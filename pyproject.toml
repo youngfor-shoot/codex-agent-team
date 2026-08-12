@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codex-agent-team"
+description = "Codex Skill for choosing and coordinating the smallest safe Agent setup."
+version = "0.3.0"
+requires-python = ">=3.10"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+# Platform-specific branches (msvcrt/fcntl/ctypes/win32 flags) are guarded by
+# os.name at runtime; each platform's typeshed makes the other platform's
+# ignores unused, so suppress unused-ignore rather than fight the symmetry.
+warn_unused_ignores = false
+exclude = ["test_.*\\.py$"]
+
+[[tool.mypy.overrides]]
+module = ["evidence_loop"]
+# Platform-specific modules imported inside os.name branches.
+ignore_missing_imports = true

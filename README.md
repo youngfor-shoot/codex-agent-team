@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/youngfor-shoot/codex-agent-team/actions/workflows/ci.yml/badge.svg)](https://github.com/youngfor-shoot/codex-agent-team/actions/workflows/ci.yml)
 
+[English](README.md) · [简体中文](README.zh-CN.md)
+
 `agent-team` is a Codex Skill for choosing and coordinating the smallest safe
 Agent setup for a task. It separates five decisions that are often mixed
 together: topology, wakeups, convergence, verification, and human gates.
@@ -144,8 +146,11 @@ Use $agent-team to complete: audit and repair this release workflow
 Read [`skill/agent-team/SKILL.md`](skill/agent-team/SKILL.md) for the full
 contract. Evidence-loop, verification-backend, roundtable, and implementation
 lane details use progressive disclosure under
-[`skill/agent-team/references/`](skill/agent-team/references/). See the
-[`CHANGELOG.md`](CHANGELOG.md) for version history.
+[`skill/agent-team/references/`](skill/agent-team/references/). Worked
+examples — preview output, a temporary-team transcript, an evidence-loop
+session, persistent-team setup, and refusal cases — live under
+[`examples/`](examples/). See the [`CHANGELOG.md`](CHANGELOG.md) for version
+history.
 
 ## Safety model
 
@@ -160,6 +165,13 @@ lane details use progressive disclosure under
   merge, deploy, publish, or cross a human gate.
 
 See [`SECURITY.md`](SECURITY.md) for private vulnerability reporting.
+
+## Community
+
+- [Discussions](https://github.com/youngfor-shoot/codex-agent-team/discussions)
+  for questions and policy proposals.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) for how to contribute.
+- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) for community standards.
 
 ## Develop and verify
 

@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/youngfor-shoot/codex-agent-team/schemas/state.schema.json",
+  "title": "Evidence-loop state file",
+  "description": "Mutable state for a bounded evidence-loop run. Schema version 1.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "run_id",
+    "contract_file",
+    "contract_hash",
+    "state_hash",
+    "revision",
+    "iteration",
+    "status",
+    "worker_run_ids",
+    "current_worker_run_id",
+    "same_failure_streak",
+    "history",
+    "active_seconds"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "run_id": { "type": "string" },
+    "contract_file": { "type": "string" },
+    "contract_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "state_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "revision": { "type": "integer", "minimum": 0 },
+    "iteration": { "type": "integer", "minimum": 0 },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "running",
+        "verification_passed",
+        "completed",
+        "aborted",
+        "stopped_iteration",
+        "stopped_time",
+        "stopped_no_progress",
+        "stopped_acceptance_tampered"
+      ]
+    },
+    "worker_run_ids": { "type": "array", "items": { "type": "string" } },
+    "current_worker_run_id": { "type": ["string", "null"] },
+    "same_failure_streak": { "type": "integer", "minimum": 0 },
+    "last_failure_fingerprint": { "type": ["string", "null"] },
+    "last_verification": { "type": ["object", "null"] },
+    "last_review": { "type": ["object", "null"] },
+    "stop_reason": { "type": ["string", "null"] },
+    "active_seconds": { "type": "number", "minimum": 0 },
+    "verification_passed_at": { "type": ["string", "null"] },
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["at", "event"],
+        "properties": {
+          "at": { "type": "string", "format": "date-time" },
+          "event": { "type": "string" }
+        }
+      }
+    }
+  }
+}

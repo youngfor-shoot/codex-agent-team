@@ -140,6 +140,40 @@ Abort immediately for scope drift, permission expansion, sensitive data,
 destructive behavior, missing human judgment, or an acceptance contract that
 is no longer valid.
 
+## Recovery when the pinned hashes are lost
+
+The controller's context can be compacted or lost. If both pinned hashes are
+gone, the run is not recoverable through the normal commands. Use the
+deliberately awkward recovery path — it requires an explicit acknowledgement
+and never produces `completed`:
+
+```powershell
+python $runner inspect `
+  --state-file $state `
+  --acknowledge-unpinned
+# prints a loud warning, the current hashes, and appends an
+# unpinned_inspection history event; use the printed hashes to resume normal
+# pinned operation if the run is still active.
+
+python $runner abort `
+  --state-file $state `
+  --acknowledge-unpinned `
+  --reason-code pin_lost
+# safe: abort only moves toward a terminal state, never toward completed.
+```
+
+The invariant is that no unpinned path can produce `completed`. Inspect and
+abort preserve it; the audit trail records the event in `history`.
+
+## Time budgets
+
+Enforcement is measured in active check-execution seconds, not wall clock, so
+agent-in-the-loop planning between `init` and `verify` does not consume the
+budget. `--active-budget-seconds` defaults to `--max-minutes * 60`; the
+wall-clock deadline is a larger backstop (8x max-minutes). Once verification
+passes, review has its own grace window (`--review-grace-minutes`, default
+15) so a completed, verified run can always be closed out.
+
 ## Exit codes
 
 - `0`: command completed; inspect the returned status.

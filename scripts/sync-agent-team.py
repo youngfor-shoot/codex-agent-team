@@ -8,12 +8,15 @@ canonical Skill surface without PowerShell. Standard library only.
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
-import json
 import os
 import shutil
 import sys
 from pathlib import Path
+from typing import TypedDict
+
+__version__ = "0.3.0"
 
 
 def normalized_hash(path: Path) -> str:
@@ -39,7 +42,7 @@ def managed_relative_path(relative_path: str) -> bool:
     return False
 
 
-def managed_files(root: Path) -> list[dict]:
+def managed_files(root: Path) -> list[dict[str, str]]:
     if not root.is_dir():
         return []
     files = []
@@ -58,7 +61,16 @@ def managed_files(root: Path) -> list[dict]:
     return sorted(files, key=lambda item: item["relative_path"])
 
 
-def compare_managed(source_files: list[dict], destination_files: list[dict]) -> dict:
+class Drift(TypedDict):
+    missing: list[str]
+    changed: list[str]
+    stale: list[str]
+    has_drift: bool
+
+
+def compare_managed(
+    source_files: list[dict[str, str]], destination_files: list[dict[str, str]]
+) -> Drift:
     source_by_path = {item["relative_path"]: item for item in source_files}
     destination_by_path = {item["relative_path"]: item for item in destination_files}
     missing = sorted(set(source_by_path) - set(destination_by_path))
@@ -77,7 +89,7 @@ def compare_managed(source_files: list[dict], destination_files: list[dict]) -> 
     }
 
 
-def write_drift(drift: dict) -> None:
+def write_drift(drift: Drift) -> None:
     groups = (
         ("Missing from runtime", drift["missing"]),
         ("Changed in runtime", drift["changed"]),
@@ -93,10 +105,12 @@ def write_drift(drift: dict) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Verify or install the agent-team Skill runtime copy."
+        description="Verify, install, uninstall, or restore the agent-team Skill runtime copy."
     )
     parser.add_argument(
-        "--mode", choices=("Verify", "Install"), default="Verify"
+        "--mode",
+        choices=("Verify", "Install", "Uninstall", "Restore"),
+        default="Verify",
     )
     parser.add_argument(
         "--destination",
@@ -104,9 +118,25 @@ def main() -> int:
         help="Runtime destination (default: ~/.codex/skills/agent-team)",
     )
     parser.add_argument(
+        "--backup-name",
+        default="",
+        help="Backup directory name to restore from (Restore mode)",
+    )
+    parser.add_argument(
         "--yes",
         action="store_true",
         help="Proceed without an interactive confirmation prompt",
+    )
+    parser.add_argument(
+        "--keep-backups",
+        type=int,
+        default=5,
+        help="Number of backup directories to retain (default: 5)",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     args = parser.parse_args()
 
@@ -146,9 +176,81 @@ def main() -> int:
                 "agent-team runtime copy differs from canonical source.",
                 file=sys.stderr,
             )
-            return 1
+            return 2
         print(
             f"agent-team source and runtime copy match ({len(source_files)} managed files)."
+        )
+        return 0
+
+    if args.mode == "Uninstall":
+        if not destination_files:
+            print("No managed agent-team files installed; nothing to uninstall.")
+            return 0
+        if not args.yes:
+            answer = input(
+                f"Remove {len(destination_files)} managed agent-team files from "
+                f"{destination_root}? [y/N] "
+            ).strip().lower()
+            if answer not in {"y", "yes"}:
+                print("Uninstall canceled.")
+                return 2
+        for item in destination_files:
+            stale_path = destination_root / item["relative_path"]
+            if stale_path.is_file():
+                stale_path.unlink()
+        # Prune empty directories left by uninstall.
+        for directory in sorted(
+            (path for path in destination_root.rglob("*") if path.is_dir()),
+            key=lambda path: len(path.parts),
+            reverse=True,
+        ):
+            try:
+                if not any(directory.iterdir()):
+                    directory.rmdir()
+            except OSError:
+                pass
+        print(f"Uninstalled agent-team runtime copy ({len(destination_files)} managed files).")
+        return 0
+
+    if args.mode == "Restore":
+        if not args.backup_name:
+            print("Restore requires --backup-name.", file=sys.stderr)
+            return 1
+        backup_root = (
+            destination_root.parent / ".agent-team-backups" / args.backup_name
+        )
+        if not backup_root.is_dir():
+            print(f"Backup does not exist: {backup_root}", file=sys.stderr)
+            return 1
+        backup_files = managed_files(backup_root)
+        if not backup_files:
+            print(f"Backup contains no managed files: {backup_root}", file=sys.stderr)
+            return 1
+        if not args.yes:
+            answer = input(
+                f"Restore {len(backup_files)} managed agent-team files from "
+                f"{backup_root}? [y/N] "
+            ).strip().lower()
+            if answer not in {"y", "yes"}:
+                print("Restore canceled.")
+                return 2
+        destination_root.mkdir(parents=True, exist_ok=True)
+        for item in backup_files:
+            destination_file = destination_root / item["relative_path"]
+            destination_file.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item["full_name"], destination_file)
+        restored = managed_files(destination_root)
+        restored_drift = compare_managed(backup_files, restored)
+        if restored_drift["has_drift"]:
+            write_drift(restored_drift)
+            print(
+                "agent-team restore did not converge to the backup.",
+                file=sys.stderr,
+            )
+            return 1
+        print(
+            f"Restored agent-team runtime copy from {args.backup_name} "
+            f"({len(backup_files)} managed files)."
         )
         return 0
 
@@ -172,7 +274,7 @@ def main() -> int:
     if destination_files:
         backup_base = destination_root.parent / ".agent-team-backups"
         backup_name = (
-            __import__("datetime").datetime.now().strftime("%Y%m%d-%H%M%S")
+            datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
             + "-"
             + os.urandom(4).hex()
         )
@@ -193,6 +295,18 @@ def main() -> int:
         if stale_path.is_file():
             stale_path.unlink()
 
+    # Prune empty managed directories left by stale-file removal.
+    for directory in sorted(
+        (path for path in destination_root.rglob("*") if path.is_dir()),
+        key=lambda path: len(path.parts),
+        reverse=True,
+    ):
+        try:
+            if not any(directory.iterdir()):
+                directory.rmdir()
+        except OSError:
+            pass
+
     post_files = managed_files(destination_root)
     post_drift = compare_managed(source_files, post_files)
     if post_drift["has_drift"]:
@@ -206,6 +320,12 @@ def main() -> int:
     print(f"Installed agent-team runtime copy ({len(source_files)} managed files).")
     if backup_path is not None:
         print(f"Backup: {backup_path}")
+
+    backup_base = destination_root.parent / ".agent-team-backups"
+    if backup_base.is_dir():
+        backup_dirs = sorted(backup_base.iterdir(), key=lambda p: p.name, reverse=True)
+        for stale_backup in backup_dirs[args.keep_backups :]:
+            shutil.rmtree(stale_backup, ignore_errors=True)
     return 0
 
 

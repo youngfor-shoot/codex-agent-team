@@ -2,3 +2,12 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .scratch/
+.venv/
+.DS_Store
+.idea/
+.vscode/
+*.egg-info/
+build/
+dist/
+.mypy_cache/
+.ruff_cache/

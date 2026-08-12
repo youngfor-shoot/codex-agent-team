@@ -1,5 +1,6 @@
 # Task
 
+- `contract_version`: `1`
 - `task_id`: `case`
 - `status`: `pending`
 - `execution_topology`: `temporary`

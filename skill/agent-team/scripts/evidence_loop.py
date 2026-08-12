@@ -13,12 +13,13 @@ import subprocess
 import sys
 import tempfile
 import time
-from contextlib import contextmanager
+from collections.abc import Sequence
+from contextlib import contextmanager, suppress
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
-
+__version__ = "0.3.0"
 SCHEMA_VERSION = 1
 MAX_CAPTURE_CHARS = 4_000
 MAX_HISTORY_EVENTS = 40
@@ -53,11 +54,31 @@ IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,254}$")
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 REDACTIONS = (
+    # OpenAI-style keys
     re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b"),
+    # Bearer tokens
     re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{8,}"),
+    # key=value / key: value assignments
     re.compile(
         r"(?i)\b(api[_-]?key|access[_-]?token|password|secret)\s*[:=]\s*"
         r"([^\s,;]{4,})"
+    ),
+    # AWS access keys
+    re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"),
+    # GitHub tokens
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"),
+    # Slack tokens
+    re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"),
+    # JWT compact tokens (header.payload.signature)
+    re.compile(
+        r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"
+    ),
+    # PEM private-key blocks
+    re.compile(
+        r"-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----"
+        r".*?-----END (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----",
+        re.DOTALL,
     ),
 )
 SENSITIVE_FILE_NAMES = {
@@ -234,6 +255,7 @@ def validate_state_shape(state: dict[str, Any]) -> None:
         "current_worker_run_id",
         "same_failure_streak",
         "history",
+        "active_seconds",
     }
     missing = required.difference(state)
     if missing:
@@ -270,10 +292,8 @@ def write_json_atomic(path: Path, value: dict[str, Any]) -> None:
 
 def make_readonly(path: Path) -> None:
     """Best-effort read-only marking; contract hashes remain the guarantee."""
-    try:
+    with suppress(OSError):
         os.chmod(path, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
-    except OSError:
-        pass
 
 
 def write_state(path: Path, state: dict[str, Any]) -> None:
@@ -283,7 +303,7 @@ def write_state(path: Path, state: dict[str, Any]) -> None:
 
 
 @contextmanager
-def run_lock(state_path: Path):
+def run_lock(state_path: Path) -> Any:
     lock_path = state_path.with_name(f"{state_path.name}.lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open("a+b") as handle:
@@ -295,20 +315,20 @@ def run_lock(state_path: Path):
         if os.name == "nt":
             import msvcrt
 
-            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)  # type: ignore[attr-defined]
             try:
                 yield
             finally:
                 handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
         else:
             import fcntl
 
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)  # type: ignore[attr-defined]
             try:
                 yield
             finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)  # type: ignore[attr-defined]
 
 
 def read_bundle(
@@ -338,15 +358,15 @@ def append_event(state: dict[str, Any], event: str, **details: Any) -> None:
     state["history"] = (state.get("history", []) + [item])[-MAX_HISTORY_EVENTS:]
 
 
-def redact(value: str) -> str:
+def redact(value: str, max_chars: int = MAX_CAPTURE_CHARS) -> str:
     result = value
     for pattern in REDACTIONS:
         if pattern.groups >= 2:
             result = pattern.sub(lambda match: f"{match.group(1)}=[REDACTED]", result)
         else:
             result = pattern.sub("[REDACTED]", result)
-    if len(result) > MAX_CAPTURE_CHARS:
-        result = result[-MAX_CAPTURE_CHARS:]
+    if len(result) > max_chars:
+        result = result[-max_chars:]
         result = f"[OUTPUT TRUNCATED]\n{result}"
     return result
 
@@ -570,7 +590,7 @@ def create_windows_kill_job(process: subprocess.Popen[bytes]) -> int:
             ("PeakJobMemoryUsed", ctypes.c_size_t),
         ]
 
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
     kernel32.CreateJobObjectW.restype = wintypes.HANDLE
     kernel32.CreateJobObjectW.argtypes = (ctypes.c_void_p, wintypes.LPCWSTR)
     kernel32.SetInformationJobObject.argtypes = (
@@ -588,17 +608,17 @@ def create_windows_kill_job(process: subprocess.Popen[bytes]) -> int:
     kernel32.CloseHandle.restype = wintypes.BOOL
     job = kernel32.CreateJobObjectW(None, None)
     if not job:
-        raise OSError(ctypes.get_last_error(), "CreateJobObjectW failed")
+        raise OSError(ctypes.get_last_error(), "CreateJobObjectW failed")  # type: ignore[attr-defined]
     information = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
     information.BasicLimitInformation.LimitFlags = 0x00002000
     if not kernel32.SetInformationJobObject(
         job, 9, ctypes.byref(information), ctypes.sizeof(information)
     ):
-        error = ctypes.get_last_error()
+        error = ctypes.get_last_error()  # type: ignore[attr-defined]
         kernel32.CloseHandle(job)
         raise OSError(error, "SetInformationJobObject failed")
-    if not kernel32.AssignProcessToJobObject(job, int(process._handle)):
-        error = ctypes.get_last_error()
+    if not kernel32.AssignProcessToJobObject(job, int(process._handle)):  # type: ignore[attr-defined]
+        error = ctypes.get_last_error()  # type: ignore[attr-defined]
         kernel32.CloseHandle(job)
         raise OSError(error, "AssignProcessToJobObject failed")
     return int(job)
@@ -610,7 +630,7 @@ def close_windows_handle(handle: int | None) -> None:
     import ctypes
     from ctypes import wintypes
 
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
     kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
     kernel32.CloseHandle.restype = wintypes.BOOL
     kernel32.CloseHandle(handle)
@@ -624,10 +644,8 @@ def terminate_process_tree(
     elif process.poll() is None:
         import signal
 
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)  # type: ignore[attr-defined]
     try:
         process.wait(timeout=15)
         return True
@@ -640,18 +658,43 @@ def terminate_process_tree(
             return False
 
 
-def read_capped_output(handle: Any) -> str:
+def read_capped_output(handle: Any, max_chars: int = MAX_CAPTURE_CHARS) -> str:
     handle.flush()
     size = handle.seek(0, os.SEEK_END)
-    handle.seek(max(0, size - (MAX_CAPTURE_CHARS * 4)))
-    return redact(handle.read().decode("utf-8", errors="replace"))
+    handle.seek(max(0, size - (max_chars * 4)))
+    return redact(handle.read().decode("utf-8", errors="replace"), max_chars)
+
+
+@contextmanager
+def posix_signal_cleanup(process: subprocess.Popen[bytes]) -> Any:
+    """On POSIX, kill the child process group when the parent is interrupted.
+
+    Windows is covered by the Job Object; POSIX needs an explicit handler so a
+    Ctrl-C on the controller does not leave descendant check processes alive.
+    """
+    if os.name == "nt":
+        yield
+        return
+    import signal
+
+    def _kill_child_group(_signum: int, _frame: Any) -> None:
+        with suppress(ProcessLookupError, OSError):
+            os.killpg(process.pid, signal.SIGKILL)  # type: ignore[attr-defined]
+
+    previous_int = signal.signal(signal.SIGINT, _kill_child_group)
+    previous_term = signal.signal(signal.SIGTERM, _kill_child_group)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGINT, previous_int)
+        signal.signal(signal.SIGTERM, previous_term)
 
 
 def windows_wrapped_command(command: list[str]) -> list[str]:
     return [
         sys.executable,
         str(Path(__file__).resolve()),
-        "_exec-check",
+        "--internal-exec-check",
         json.dumps(command),
     ]
 
@@ -661,6 +704,7 @@ def run_check(
     worktree: Path,
     timeout_seconds: int,
     passthrough: Sequence[str] = (),
+    max_chars: int = MAX_CAPTURE_CHARS,
 ) -> dict[str, Any]:
     started = time.monotonic()
     windows_job: int | None = None
@@ -676,7 +720,7 @@ def run_check(
                 shell=False,
                 env=sanitized_environment(passthrough),
                 creationflags=(
-                    subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+                    subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0  # type: ignore[attr-defined]
                 ),
                 start_new_session=os.name != "nt",
             )
@@ -692,7 +736,8 @@ def run_check(
                 process.stdin.close()
                 process.stdin = None
             try:
-                process.wait(timeout=timeout_seconds)
+                with posix_signal_cleanup(process):
+                    process.wait(timeout=timeout_seconds)
                 timed_out = False
                 returncode = process.returncode
             except subprocess.TimeoutExpired:
@@ -709,8 +754,8 @@ def run_check(
                 "returncode": returncode,
                 "timed_out": timed_out,
                 "duration_seconds": round(time.monotonic() - started, 3),
-                "stdout": read_capped_output(stdout_file),
-                "stderr": read_capped_output(stderr_file),
+                "stdout": read_capped_output(stdout_file, max_chars),
+                "stderr": read_capped_output(stderr_file, max_chars),
             }
         except OSError as exc:
             return {
@@ -718,8 +763,8 @@ def run_check(
                 "returncode": None,
                 "timed_out": False,
                 "duration_seconds": round(time.monotonic() - started, 3),
-                "stdout": read_capped_output(stdout_file),
-                "stderr": redact(str(exc)),
+                "stdout": read_capped_output(stdout_file, max_chars),
+                "stderr": redact(str(exc), max_chars),
             }
 
 
@@ -795,6 +840,7 @@ def init_run(args: argparse.Namespace) -> int:
         frozen_assets[str(path)] = path_fingerprint(path)
 
     created = utc_now()
+    active_budget_seconds = args.active_budget_seconds or (args.max_minutes * 60)
     contract: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "run_id": args.run_id,
@@ -809,12 +855,20 @@ def init_run(args: argparse.Namespace) -> int:
             "max_minutes": args.max_minutes,
             "command_timeout_seconds": args.command_timeout,
             "same_failure_limit": args.same_failure_limit,
+            "active_budget_seconds": active_budget_seconds,
+            "review_grace_minutes": args.review_grace_minutes,
+            "max_capture_chars": args.max_capture_chars,
         },
         "require_review": True,
         "protected_paths": [str(path) for path in protected_paths],
         "env_passthrough": env_passthrough,
         "created_at": isoformat(created),
-        "deadline": isoformat(created + timedelta(minutes=args.max_minutes)),
+        # Wall-clock backstop, deliberately much larger than the active budget:
+        # agent-in-the-loop planning between init and verify must not consume
+        # the enforcement budget.
+        "deadline": isoformat(
+            created + timedelta(minutes=args.max_minutes * 8)
+        ),
     }
     pinned_hash = contract_hash(contract)
     state: dict[str, Any] = {
@@ -833,15 +887,24 @@ def init_run(args: argparse.Namespace) -> int:
         "last_verification": None,
         "last_review": None,
         "stop_reason": None,
+        "active_seconds": 0.0,
         "history": [],
     }
     append_event(state, "initialized")
-    with run_lock(state_path):
-        if state_path.exists() or contract_path.exists():
-            raise LoopError(f"Run control files already exist for: {state_path}")
-        write_json_atomic(contract_path, contract)
-        make_readonly(contract_path)
-        write_state(state_path, state)
+    lock_path = state_path.with_name(f"{state_path.name}.lock")
+    try:
+        with run_lock(state_path):
+            if state_path.exists() or contract_path.exists():
+                raise LoopError(f"Run control files already exist for: {state_path}")
+            write_json_atomic(contract_path, contract)
+            make_readonly(contract_path)
+            write_state(state_path, state)
+    except BaseException:
+        # Failed init leaves an orphan lock; remove it so the next attempt
+        # can lock cleanly. Only safe because init created the lock anew.
+        with suppress(OSError):
+            lock_path.unlink(missing_ok=True)
+        raise
     print_summary(state, contract)
     return 0
 
@@ -917,6 +980,7 @@ def verify_iteration(args: argparse.Namespace) -> int:
 
         results: list[dict[str, Any]] = []
         passthrough = contract.get("env_passthrough", [])
+        active_budget = contract["limits"]["active_budget_seconds"]
         for command in contract["checks"]:
             remaining = int(
                 (parse_time(contract["deadline"]) - utc_now()).total_seconds()
@@ -932,7 +996,27 @@ def verify_iteration(args: argparse.Namespace) -> int:
                 1,
                 min(contract["limits"]["command_timeout_seconds"], remaining),
             )
-            results.append(run_check(command, worktree, timeout_seconds, passthrough))
+            result = run_check(
+                command,
+                worktree,
+                timeout_seconds,
+                passthrough,
+                contract["limits"].get("max_capture_chars", MAX_CAPTURE_CHARS),
+            )
+            results.append(result)
+            state["active_seconds"] += result.get("duration_seconds", 0.0)
+            if state["active_seconds"] > active_budget:
+                state["status"] = "stopped_time"
+                state["stop_reason"] = "active_budget_exceeded"
+                append_event(
+                    state,
+                    "stopped",
+                    reason="active_budget_exceeded",
+                    active_seconds=state["active_seconds"],
+                )
+                write_state(state_path, state)
+                print_summary(state, contract)
+                return 3
             if utc_now() >= parse_time(contract["deadline"]):
                 state["status"] = "stopped_time"
                 state["stop_reason"] = "max_elapsed_time"
@@ -964,6 +1048,7 @@ def verify_iteration(args: argparse.Namespace) -> int:
             state["same_failure_streak"] = 0
             state["last_failure_fingerprint"] = None
             state["status"] = "verification_passed"
+            state["verification_passed_at"] = isoformat(utc_now())
             append_event(
                 state,
                 "verification_passed",
@@ -1044,7 +1129,7 @@ def record_review(args: argparse.Namespace) -> int:
         state, contract = read_bundle(
             state_path, args.expected_contract_hash, args.expected_state_hash
         )
-        ensure_runtime_contract(state_path, state, contract)
+        worktree = ensure_runtime_contract(state_path, state, contract)
         if state["status"] != "verification_passed":
             raise LoopError(f"Run cannot record review from: {state['status']}")
         try:
@@ -1061,7 +1146,7 @@ def record_review(args: argparse.Namespace) -> int:
             print_summary(state, contract)
             return 3
         current_source_hash = source_fingerprint(
-            Path(contract["worktree"]), contract["git_identity"]["base_commit"]
+            worktree, contract["git_identity"]["base_commit"]
         )
         if current_source_hash != state["last_verification"]["source_fingerprint"]:
             state["status"] = "active"
@@ -1078,6 +1163,19 @@ def record_review(args: argparse.Namespace) -> int:
             state["status"] = "stopped_time"
             state["stop_reason"] = "max_elapsed_time"
             append_event(state, "stopped", reason="max_elapsed_time")
+            write_state(state_path, state)
+            print_summary(state, contract)
+            return 3
+        # Review grace window: once verification passed, the run may complete
+        # review even if the wall-clock deadline lapsed, within a bounded grace.
+        passed_at = state.get("verification_passed_at")
+        grace_minutes = contract["limits"].get("review_grace_minutes", 15)
+        if passed_at and utc_now() > parse_time(passed_at) + timedelta(
+            minutes=grace_minutes
+        ):
+            state["status"] = "stopped_time"
+            state["stop_reason"] = "review_grace_expired"
+            append_event(state, "stopped", reason="review_grace_expired")
             write_state(state_path, state)
             print_summary(state, contract)
             return 3
@@ -1125,14 +1223,33 @@ def record_review(args: argparse.Namespace) -> int:
     return exit_code
 
 
+def read_state_unpinned(state_path: Path) -> dict[str, Any]:
+    """Read state without hash verification for the deliberate recovery path."""
+    state = read_json(state_path, "state")
+    validate_state_shape(state)
+    return state
+
+
+def read_contract_unpinned(state: dict[str, Any]) -> dict[str, Any]:
+    contract_path = Path(state["contract_file"]).resolve()
+    return read_json(contract_path, "contract")
+
+
 def abort_run(args: argparse.Namespace) -> int:
     if not REASON_CODE_RE.fullmatch(args.reason_code):
         raise LoopError("Abort reason code must use 1-64 lowercase safe characters")
     state_path = Path(args.state_file).expanduser().resolve()
     with run_lock(state_path):
-        state, contract = read_bundle(
-            state_path, args.expected_contract_hash, args.expected_state_hash
-        )
+        if getattr(args, "acknowledge_unpinned", False):
+            state = read_state_unpinned(state_path)
+            contract = read_contract_unpinned(state)
+            append_event(
+                state, "unpinned_abort", reason_code=args.reason_code
+            )
+        else:
+            state, contract = read_bundle(
+                state_path, args.expected_contract_hash, args.expected_state_hash
+            )
         if state["status"] in TERMINAL_STATUSES:
             raise LoopError(f"Run is already terminal: {state['status']}")
         state["status"] = "aborted"
@@ -1143,6 +1260,25 @@ def abort_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def inspect_run(args: argparse.Namespace) -> int:
+    """Recovery inspection that does not require pinned hashes."""
+    if not getattr(args, "acknowledge_unpinned", False):
+        raise LoopError("inspect requires --acknowledge-unpinned")
+    state_path = Path(args.state_file).expanduser().resolve()
+    with run_lock(state_path):
+        state = read_state_unpinned(state_path)
+        contract = read_contract_unpinned(state)
+        append_event(state, "unpinned_inspection")
+        write_state(state_path, state)
+    print(
+        "WARNING: unpinned inspection bypassed hash verification. "
+        "Verify the run_id and state path before trusting this output.",
+        file=sys.stderr,
+    )
+    print_summary(state, contract, verbose=args.verbose)
+    return 0
+
+
 def show_status(args: argparse.Namespace) -> int:
     state_path = Path(args.state_file).expanduser().resolve()
     with run_lock(state_path):
@@ -1150,6 +1286,34 @@ def show_status(args: argparse.Namespace) -> int:
             state_path, args.expected_contract_hash, args.expected_state_hash
         )
     print_summary(state, contract, verbose=args.verbose)
+    return 0
+
+
+def list_runs(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    if not root.is_dir():
+        raise LoopError(f"Run root does not exist: {root}")
+    rows: list[dict[str, Any]] = []
+    for state_path in sorted(root.glob("*.json")):
+        if state_path.name.endswith(".contract.json"):
+            continue
+        try:
+            state = read_json(state_path, "state")
+            validate_state_shape(state)
+        except LoopError:
+            # Skip files that are not evidence-loop states (or are corrupt).
+            continue
+        rows.append(
+            {
+                "run_id": state["run_id"],
+                "status": state["status"],
+                "state_file": str(state_path),
+                "revision": state["revision"],
+                "iteration": state["iteration"],
+                "updated": state["history"][-1]["at"] if state["history"] else None,
+            }
+        )
+    print(json.dumps(rows, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -1181,7 +1345,7 @@ def print_summary(
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
 
-def bounded_int(minimum: int, maximum: int):
+def bounded_int(minimum: int, maximum: int) -> Any:
     def parse(value: str) -> int:
         integer = int(value)
         if not minimum <= integer <= maximum:
@@ -1196,6 +1360,9 @@ def bounded_int(minimum: int, maximum: int):
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run a bounded external evidence loop in a linked Git worktree."
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
@@ -1218,6 +1385,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     init_parser.add_argument(
         "--same-failure-limit", type=bounded_int(1, 5), default=2
+    )
+    init_parser.add_argument(
+        "--review-grace-minutes", type=bounded_int(1, 240), default=15
+    )
+    init_parser.add_argument(
+        "--active-budget-seconds",
+        type=bounded_int(1, 14_400),
+        default=None,
+        help="Active check-execution budget; defaults to max-minutes * 60",
+    )
+    init_parser.add_argument(
+        "--max-capture-chars",
+        type=bounded_int(1, 65_536),
+        default=MAX_CAPTURE_CHARS,
+        help="Captured output tail per stream (default: 4000)",
     )
     init_parser.set_defaults(handler=init_run)
 
@@ -1247,10 +1429,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     abort_parser = commands.add_parser("abort")
     abort_parser.add_argument("--state-file", required=True)
-    abort_parser.add_argument("--expected-contract-hash", required=True)
-    abort_parser.add_argument("--expected-state-hash", required=True)
+    abort_parser.add_argument("--expected-contract-hash", default="")
+    abort_parser.add_argument("--expected-state-hash", default="")
+    abort_parser.add_argument("--acknowledge-unpinned", action="store_true")
     abort_parser.add_argument("--reason-code", required=True)
     abort_parser.set_defaults(handler=abort_run)
+
+    inspect_parser = commands.add_parser(
+        "inspect", help="Inspect a run without pinned hashes (recovery only)"
+    )
+    inspect_parser.add_argument("--state-file", required=True)
+    inspect_parser.add_argument("--acknowledge-unpinned", action="store_true")
+    inspect_parser.add_argument("--verbose", action="store_true")
+    inspect_parser.set_defaults(handler=inspect_run)
 
     status_parser = commands.add_parser("status")
     status_parser.add_argument("--state-file", required=True)
@@ -1258,6 +1449,12 @@ def build_parser() -> argparse.ArgumentParser:
     status_parser.add_argument("--expected-state-hash", required=True)
     status_parser.add_argument("--verbose", action="store_true")
     status_parser.set_defaults(handler=show_status)
+
+    list_parser = commands.add_parser(
+        "list", help="Enumerate evidence-loop runs under a root directory"
+    )
+    list_parser.add_argument("--root", required=True)
+    list_parser.set_defaults(handler=list_runs)
     return parser
 
 
@@ -1265,13 +1462,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        return args.handler(args)
+        return int(args.handler(args))
     except LoopError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
 
 def exec_check_main(raw_command: str) -> int:
+    # This trampoline is private to the helper. Reject interactive TTY use so
+    # a user cannot casually treat it as a general command runner.
+    if sys.stdin.isatty():
+        return 127
     try:
         command = parse_command(raw_command)
         if sys.stdin.buffer.read(1) != b"1":
@@ -1286,6 +1487,6 @@ def exec_check_main(raw_command: str) -> int:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 3 and sys.argv[1] == "_exec-check":
+    if len(sys.argv) == 3 and sys.argv[1] == "--internal-exec-check":
         raise SystemExit(exec_check_main(sys.argv[2]))
     raise SystemExit(main())

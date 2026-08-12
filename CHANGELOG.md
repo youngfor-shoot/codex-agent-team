@@ -15,19 +15,44 @@ All notable changes to the `agent-team` Skill and this repository.
   reference.
 - `examples/in-progress-task-packet.md` and
   `examples/completed-task-packet.md`: validated worked examples, wired into CI.
+- `examples/01-preview-output.md` through `05-when-not-to-use.md`: five worked
+  scenario examples (preview, temporary run, evidence loop, persistent team,
+  refusal cases).
 - `--env-passthrough` on the evidence-loop `init` command: pass specific
   environment variables by name, frozen into the run contract.
 - Cross-platform environment allowlist for `sanitized_environment()`: POSIX
   variables (`HOME`, `LANG`, `USER`, `TMPDIR`, etc.) join the existing Windows
   set.
 - Read-only marking of the evidence-loop contract file after `init`.
-- CI matrix now includes macOS (`macos-latest`) alongside Linux and Windows.
+- CI matrix now includes macOS (`macos-latest`) alongside Linux and Windows,
+  plus a Python version matrix (3.10–3.13) and a cross-platform installer job.
+- Static routing conformance suite (`tests/scenarios/`, `scripts/routing_rules.py`)
+  encoding the cross-field routing invariants; runs in CI with no API calls.
+- `references/task-type-routing.md`, `references/running-a-persistent-team.md`,
+  `references/supervision-and-handoffs.md`, `references/completion-invariants.md`:
+  procedural content moved out of SKILL.md.
+- Active-time budget (`--active-budget-seconds`), review grace window
+  (`--review-grace-minutes`), and `inspect` / `abort --acknowledge-unpinned`
+  recovery paths in the evidence loop.
+- `--version` flags and `contract_version` field on the task-packet contract.
+- Backup retention (`-KeepBackups` / `--keep-backups`, default 5) and
+  Uninstall / Restore modes in both sync helpers.
+- Extended redaction patterns (AWS, GitHub, Slack, JWT, PEM).
+- `evidence_loop.py list --root` to enumerate runs.
+- Published JSON Schemas under `schemas/` for state and contract files.
+- `README.zh-CN.md`; community files (CONTRIBUTING, CODE_OF_CONDUCT, issue/PR
+  templates); Discussions enabled.
+- CI quality gates: ruff, mypy --strict, CodeQL, Dependabot.
 
 ### Changed
 
 - Independent review defaults to `native-verifier`; AgentParliament is an
   optional adapter, no longer the default review path.
-- SKILL.md frontmatter now carries `version: 0.2.0`.
+- SKILL.md split from 511 to ~270 lines; procedures moved to `references/`;
+  frontmatter `version: 0.3.0`.
+- Evidence-loop enforcement measured in active check-execution seconds with an
+  8x wall-clock backstop, instead of wall-clock-only deadlines.
+- Verify drift exit code is now 2 (1 reserved for hard errors).
 
 ## [v0.1.0] - 2026-08-02
 

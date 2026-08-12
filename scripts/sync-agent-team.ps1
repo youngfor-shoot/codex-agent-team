@@ -1,9 +1,14 @@
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = "High")]
 param(
-    [ValidateSet("Verify", "Install")]
+    [ValidateSet("Verify", "Install", "Uninstall", "Restore")]
     [string]$Mode = "Verify",
 
-    [string]$Destination = (Join-Path ([Environment]::GetFolderPath("UserProfile")) ".codex\skills\agent-team")
+    [string]$Destination = (Join-Path ([Environment]::GetFolderPath("UserProfile")) ".codex\skills\agent-team"),
+
+    [ValidateRange(1, 50)]
+    [int]$KeepBackups = 5,
+
+    [string]$BackupName
 )
 
 Set-StrictMode -Version Latest
@@ -170,10 +175,71 @@ if ($Mode -eq "Verify") {
     if ($drift.HasDrift) {
         Write-Drift $drift
         Write-Error "agent-team runtime copy differs from canonical source." -ErrorAction Continue
-        exit 1
+        exit 2
     }
 
     Write-Output "agent-team source and runtime copy match ($($sourceFiles.Count) managed files)."
+    exit 0
+}
+
+if ($Mode -eq "Uninstall") {
+    if ($destinationFiles.Count -eq 0) {
+        Write-Output "No managed agent-team files installed; nothing to uninstall."
+        exit 0
+    }
+    $operation = "Remove $($destinationFiles.Count) managed agent-team files"
+    if (-not $PSCmdlet.ShouldProcess($destinationRoot, $operation)) {
+        Write-Output "Uninstall canceled."
+        exit 2
+    }
+    foreach ($file in $destinationFiles) {
+        Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue
+    }
+    # Prune empty managed directories left by uninstall.
+    $managedDirs = @(Get-ChildItem -Directory -Recurse -LiteralPath $destinationRoot | Sort-Object { $_.FullName.Length } -Descending)
+    foreach ($dir in $managedDirs) {
+        if (@(Get-ChildItem -Force -LiteralPath $dir.FullName).Count -eq 0) {
+            Remove-Item -LiteralPath $dir.FullName -Force -ErrorAction SilentlyContinue
+        }
+    }
+    Write-Output "Uninstalled agent-team runtime copy ($($destinationFiles.Count) managed files)."
+    exit 0
+}
+
+if ($Mode -eq "Restore") {
+    if (-not $BackupName) {
+        throw "Restore requires -BackupName."
+    }
+    $backupBase = Join-Path (Split-Path -Parent $destinationRoot) ".agent-team-backups"
+    $backupRoot = Join-Path $backupBase $BackupName
+    if (-not (Test-Path -LiteralPath $backupRoot -PathType Container)) {
+        throw "Backup does not exist: $backupRoot"
+    }
+    $operation = "Restore managed agent-team files from $BackupName"
+    if (-not $PSCmdlet.ShouldProcess($destinationRoot, $operation)) {
+        Write-Output "Restore canceled."
+        exit 2
+    }
+    $backupFiles = @(Get-ManagedFiles $backupRoot)
+    if ($backupFiles.Count -eq 0) {
+        throw "Backup contains no managed files: $backupRoot"
+    }
+    New-Item -ItemType Directory -Path $destinationRoot -Force | Out-Null
+    foreach ($file in $backupFiles) {
+        $destinationFile = Join-Path $destinationRoot $file.RelativePath
+        $destinationDirectory = Split-Path -Parent $destinationFile
+        if (-not (Test-Path -LiteralPath $destinationDirectory)) {
+            New-Item -ItemType Directory -Path $destinationDirectory -Force | Out-Null
+        }
+        Copy-Item -LiteralPath $file.FullName -Destination $destinationFile -Force
+    }
+    $restoredFiles = @(Get-ManagedFiles $destinationRoot)
+    $restoredDrift = Compare-ManagedFiles $backupFiles $restoredFiles
+    if ($restoredDrift.HasDrift) {
+        Write-Drift $restoredDrift
+        throw "agent-team restore did not converge to the backup."
+    }
+    Write-Output "Restored agent-team runtime copy from $BackupName ($($backupFiles.Count) managed files)."
     exit 0
 }
 
@@ -226,6 +292,14 @@ foreach ($relativePath in $drift.Stale) {
     }
 }
 
+# Prune empty managed directories left by stale-file removal.
+$managedDirs = @(Get-ChildItem -Directory -Recurse -LiteralPath $destinationRoot | Sort-Object { $_.FullName.Length } -Descending)
+foreach ($dir in $managedDirs) {
+    if (@(Get-ChildItem -Force -LiteralPath $dir.FullName).Count -eq 0) {
+        Remove-Item -LiteralPath $dir.FullName -Force -ErrorAction SilentlyContinue
+    }
+}
+
 $postInstallFiles = @(Get-ManagedFiles $destinationRoot)
 $postInstallDrift = Compare-ManagedFiles $sourceFiles $postInstallFiles
 if ($postInstallDrift.HasDrift) {
@@ -236,5 +310,17 @@ if ($postInstallDrift.HasDrift) {
 Write-Output "Installed agent-team runtime copy ($($sourceFiles.Count) managed files)."
 if ($null -ne $backupPath) {
     Write-Output "Backup: $backupPath"
+}
+
+# Prune old backups, keeping the most recent $KeepBackups directories.
+$backupBase = Join-Path (Split-Path -Parent $destinationRoot) ".agent-team-backups"
+if (Test-Path -LiteralPath $backupBase -PathType Container) {
+    $backupDirs = @(
+        Get-ChildItem -Directory -LiteralPath $backupBase |
+            Sort-Object Name -Descending
+    )
+    foreach ($dir in $backupDirs | Select-Object -Skip $KeepBackups) {
+        Remove-Item -LiteralPath $dir.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 exit 0
