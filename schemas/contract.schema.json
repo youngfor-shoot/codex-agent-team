@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/youngfor-shoot/codex-agent-team/schemas/contract.schema.json",
+  "title": "Evidence-loop contract file",
+  "description": "Frozen, hash-pinned contract for a bounded evidence-loop run. Schema version 1.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "run_id",
+    "objective_hash",
+    "worktree",
+    "checks",
+    "frozen_assets",
+    "controller_harnesses",
+    "git_identity",
+    "limits",
+    "require_review",
+    "protected_paths",
+    "env_passthrough",
+    "created_at",
+    "deadline"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "run_id": { "type": "string" },
+    "objective_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "worktree": { "type": "string" },
+    "checks": {
+      "type": "array",
+      "items": { "type": "array", "items": { "type": "string" } }
+    },
+    "frozen_assets": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "controller_harnesses": { "type": "array", "items": { "type": "string" } },
+    "git_identity": {
+      "type": "object",
+      "required": ["base_commit", "branch", "git_dir", "common_dir"],
+      "properties": {
+        "base_commit": { "type": "string" },
+        "branch": { "type": "string" },
+        "git_dir": { "type": "string" },
+        "common_dir": { "type": "string" }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "required": [
+        "max_iterations",
+        "max_minutes",
+        "command_timeout_seconds",
+        "same_failure_limit",
+        "active_budget_seconds",
+        "review_grace_minutes",
+        "max_capture_chars"
+      ],
+      "properties": {
+        "max_iterations": { "type": "integer", "minimum": 1 },
+        "max_minutes": { "type": "integer", "minimum": 1 },
+        "command_timeout_seconds": { "type": "integer", "minimum": 1 },
+        "same_failure_limit": { "type": "integer", "minimum": 1 },
+        "active_budget_seconds": { "type": "integer", "minimum": 1 },
+        "review_grace_minutes": { "type": "integer", "minimum": 1 },
+        "max_capture_chars": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "require_review": { "const": true },
+    "protected_paths": { "type": "array", "items": { "type": "string" } },
+    "env_passthrough": { "type": "array", "items": { "type": "string" } },
+    "created_at": { "type": "string", "format": "date-time" },
+    "deadline": { "type": "string", "format": "date-time" }
+  }
+}

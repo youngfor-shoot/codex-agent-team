@@ -1289,6 +1289,34 @@ def show_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def list_runs(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    if not root.is_dir():
+        raise LoopError(f"Run root does not exist: {root}")
+    rows: list[dict[str, Any]] = []
+    for state_path in sorted(root.glob("*.json")):
+        if state_path.name.endswith(".contract.json"):
+            continue
+        try:
+            state = read_json(state_path, "state")
+            validate_state_shape(state)
+        except LoopError:
+            # Skip files that are not evidence-loop states (or are corrupt).
+            continue
+        rows.append(
+            {
+                "run_id": state["run_id"],
+                "status": state["status"],
+                "state_file": str(state_path),
+                "revision": state["revision"],
+                "iteration": state["iteration"],
+                "updated": state["history"][-1]["at"] if state["history"] else None,
+            }
+        )
+    print(json.dumps(rows, ensure_ascii=False, indent=2))
+    return 0
+
+
 def print_summary(
     state: dict[str, Any], contract: dict[str, Any], verbose: bool = False
 ) -> None:
@@ -1421,6 +1449,12 @@ def build_parser() -> argparse.ArgumentParser:
     status_parser.add_argument("--expected-state-hash", required=True)
     status_parser.add_argument("--verbose", action="store_true")
     status_parser.set_defaults(handler=show_status)
+
+    list_parser = commands.add_parser(
+        "list", help="Enumerate evidence-loop runs under a root directory"
+    )
+    list_parser.add_argument("--root", required=True)
+    list_parser.set_defaults(handler=list_runs)
     return parser
 
 

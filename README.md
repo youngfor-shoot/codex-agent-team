@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/youngfor-shoot/codex-agent-team/actions/workflows/ci.yml/badge.svg)](https://github.com/youngfor-shoot/codex-agent-team/actions/workflows/ci.yml)
 
+[English](README.md) · [简体中文](README.zh-CN.md)
+
 `agent-team` is a Codex Skill for choosing and coordinating the smallest safe
 Agent setup for a task. It separates five decisions that are often mixed
 together: topology, wakeups, convergence, verification, and human gates.

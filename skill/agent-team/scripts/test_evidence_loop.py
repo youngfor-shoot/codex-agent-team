@@ -496,6 +496,16 @@ class EvidenceLoopTests(unittest.TestCase):
         with self.assertRaises(evidence_loop.LoopError):
             evidence_loop.abort_run(args)
 
+    def test_list_runs_enumerates_state_files(self) -> None:
+        evidence_loop.init_run(self.init_args())
+        args = mock.Mock(root=str(self.case_dir))
+        self.assertEqual(evidence_loop.list_runs(args), 0)
+
+    def test_list_runs_rejects_missing_root(self) -> None:
+        args = mock.Mock(root=str(self.case_dir / "does-not-exist"))
+        with self.assertRaises(evidence_loop.LoopError):
+            evidence_loop.list_runs(args)
+
     def test_source_change_after_verification_requires_reverification(self) -> None:
         evidence_loop.init_run(self.init_args())
         evidence_loop.next_iteration(
