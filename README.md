@@ -144,8 +144,11 @@ Use $agent-team to complete: audit and repair this release workflow
 Read [`skill/agent-team/SKILL.md`](skill/agent-team/SKILL.md) for the full
 contract. Evidence-loop, verification-backend, roundtable, and implementation
 lane details use progressive disclosure under
-[`skill/agent-team/references/`](skill/agent-team/references/). See the
-[`CHANGELOG.md`](CHANGELOG.md) for version history.
+[`skill/agent-team/references/`](skill/agent-team/references/). Worked
+examples — preview output, a temporary-team transcript, an evidence-loop
+session, persistent-team setup, and refusal cases — live under
+[`examples/`](examples/). See the [`CHANGELOG.md`](CHANGELOG.md) for version
+history.
 
 ## Safety model
 
