@@ -8,12 +8,14 @@ canonical Skill surface without PowerShell. Standard library only.
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
-import json
 import os
 import shutil
 import sys
 from pathlib import Path
+
+__version__ = "0.3.0"
 
 
 def normalized_hash(path: Path) -> str:
@@ -108,6 +110,17 @@ def main() -> int:
         action="store_true",
         help="Proceed without an interactive confirmation prompt",
     )
+    parser.add_argument(
+        "--keep-backups",
+        type=int,
+        default=5,
+        help="Number of backup directories to retain (default: 5)",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
     args = parser.parse_args()
 
     repository_root = Path(__file__).resolve().parents[1]
@@ -172,7 +185,7 @@ def main() -> int:
     if destination_files:
         backup_base = destination_root.parent / ".agent-team-backups"
         backup_name = (
-            __import__("datetime").datetime.now().strftime("%Y%m%d-%H%M%S")
+            datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
             + "-"
             + os.urandom(4).hex()
         )
@@ -206,6 +219,12 @@ def main() -> int:
     print(f"Installed agent-team runtime copy ({len(source_files)} managed files).")
     if backup_path is not None:
         print(f"Backup: {backup_path}")
+
+    backup_base = destination_root.parent / ".agent-team-backups"
+    if backup_base.is_dir():
+        backup_dirs = sorted(backup_base.iterdir(), key=lambda p: p.name, reverse=True)
+        for stale_backup in backup_dirs[args.keep_backups :]:
+            shutil.rmtree(stale_backup, ignore_errors=True)
     return 0
 
 

@@ -55,6 +55,8 @@ ALLOWED_WAKEUPS = {"none", "heartbeat", "cron"}
 ALLOWED_CONVERGENCE = {"single-pass", "evidence-loop", "phase-gated"}
 ALLOWED_REVIEW_GATES = {"required", "not-required"}
 ALLOWED_REVIEW_STATUSES = {"pending", "passed", "not-applicable"}
+CONTRACT_VERSION = 1
+__version__ = "0.3.0"
 
 
 def exact_lines(text: str) -> set[str]:
@@ -136,6 +138,13 @@ def validate_packet(text: str, require_complete: bool) -> list[str]:
     for heading in sorted(REQUIRED_HEADINGS):
         if heading not in lines:
             errors.append(f"missing heading: {heading}")
+
+    contract_version = fields.get("contract_version")
+    if contract_version is not None and contract_version != str(CONTRACT_VERSION):
+        errors.append(
+            f"unsupported contract_version: {contract_version!r} "
+            f"(expected {CONTRACT_VERSION})"
+        )
 
     completion = section(text, "## Completion Criteria")
     integration = section(text, "## Integration Checklist")
@@ -271,6 +280,9 @@ def main() -> int:
     parser.add_argument("packet", type=Path)
     parser.add_argument("--require-complete", action="store_true")
     parser.add_argument("--template", action="store_true")
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
+    )
     args = parser.parse_args()
 
     if not args.packet.is_file():

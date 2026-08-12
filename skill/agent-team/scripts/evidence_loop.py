@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 
+__version__ = "0.3.0"
 SCHEMA_VERSION = 1
 MAX_CAPTURE_CHARS = 4_000
 MAX_HISTORY_EVENTS = 40
@@ -53,11 +54,31 @@ IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,254}$")
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 REDACTIONS = (
+    # OpenAI-style keys
     re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b"),
+    # Bearer tokens
     re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{8,}"),
+    # key=value / key: value assignments
     re.compile(
         r"(?i)\b(api[_-]?key|access[_-]?token|password|secret)\s*[:=]\s*"
         r"([^\s,;]{4,})"
+    ),
+    # AWS access keys
+    re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"),
+    # GitHub tokens
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"),
+    # Slack tokens
+    re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"),
+    # JWT compact tokens (header.payload.signature)
+    re.compile(
+        r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"
+    ),
+    # PEM private-key blocks
+    re.compile(
+        r"-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----"
+        r".*?-----END (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----",
+        re.DOTALL,
     ),
 )
 SENSITIVE_FILE_NAMES = {
@@ -1196,6 +1217,9 @@ def bounded_int(minimum: int, maximum: int):
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run a bounded external evidence loop in a linked Git worktree."
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
     )
     commands = parser.add_subparsers(dest="command", required=True)
 

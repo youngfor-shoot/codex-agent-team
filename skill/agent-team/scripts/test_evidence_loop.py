@@ -303,6 +303,24 @@ class EvidenceLoopTests(unittest.TestCase):
         self.assertNotIn(secret, stdout)
         self.assertLessEqual(len(stdout), evidence_loop.MAX_CAPTURE_CHARS + 32)
 
+    def test_redacts_extended_secret_shapes(self) -> None:
+        samples = {
+            "aws": "AKIAIOSFODNN7EXAMPLE",
+            "github": "ghp_" + "a" * 36,
+            "github_pat": "github_pat_" + "b" * 30,
+            "slack": "xoxb-" + "c" * 24,
+            "jwt": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
+            "pem": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFA\n-----END PRIVATE KEY-----",
+        }
+        for label, value in samples.items():
+            with self.subTest(label=label):
+                redacted = evidence_loop.redact(value)
+                self.assertNotIn(value, redacted, msg=f"{label} not redacted")
+                self.assertNotEqual(redacted, value)
+
+    def test_redact_keeps_plain_text(self) -> None:
+        self.assertEqual(evidence_loop.redact("ordinary build output"), "ordinary build output")
+
     def test_frozen_harness_tampering_hard_stops(self) -> None:
         script = self.harness()
         evidence_loop.init_run(self.init_args(command=[sys.executable, str(script)]))

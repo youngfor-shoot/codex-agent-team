@@ -3,7 +3,10 @@ param(
     [ValidateSet("Verify", "Install")]
     [string]$Mode = "Verify",
 
-    [string]$Destination = (Join-Path ([Environment]::GetFolderPath("UserProfile")) ".codex\skills\agent-team")
+    [string]$Destination = (Join-Path ([Environment]::GetFolderPath("UserProfile")) ".codex\skills\agent-team"),
+
+    [ValidateRange(1, 50)]
+    [int]$KeepBackups = 5
 )
 
 Set-StrictMode -Version Latest
@@ -236,5 +239,17 @@ if ($postInstallDrift.HasDrift) {
 Write-Output "Installed agent-team runtime copy ($($sourceFiles.Count) managed files)."
 if ($null -ne $backupPath) {
     Write-Output "Backup: $backupPath"
+}
+
+# Prune old backups, keeping the most recent $KeepBackups directories.
+$backupBase = Join-Path (Split-Path -Parent $destinationRoot) ".agent-team-backups"
+if (Test-Path -LiteralPath $backupBase -PathType Container) {
+    $backupDirs = @(
+        Get-ChildItem -Directory -LiteralPath $backupBase |
+            Sort-Object Name -Descending
+    )
+    foreach ($dir in $backupDirs | Select-Object -Skip $KeepBackups) {
+        Remove-Item -LiteralPath $dir.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 exit 0

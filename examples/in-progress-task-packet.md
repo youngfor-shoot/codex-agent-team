@@ -1,5 +1,6 @@
 # Task
 
+- `contract_version`: `1`
 - `task_id`: `auth-migration-import-validation`
 - `status`: `in_progress`
 - `execution_topology`: `temporary`
