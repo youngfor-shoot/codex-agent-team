@@ -360,15 +360,15 @@ def append_event(state: dict[str, Any], event: str, **details: Any) -> None:
     state["history"] = (state.get("history", []) + [item])[-MAX_HISTORY_EVENTS:]
 
 
-def redact(value: str) -> str:
+def redact(value: str, max_chars: int = MAX_CAPTURE_CHARS) -> str:
     result = value
     for pattern in REDACTIONS:
         if pattern.groups >= 2:
             result = pattern.sub(lambda match: f"{match.group(1)}=[REDACTED]", result)
         else:
             result = pattern.sub("[REDACTED]", result)
-    if len(result) > MAX_CAPTURE_CHARS:
-        result = result[-MAX_CAPTURE_CHARS:]
+    if len(result) > max_chars:
+        result = result[-max_chars:]
         result = f"[OUTPUT TRUNCATED]\n{result}"
     return result
 
@@ -662,18 +662,45 @@ def terminate_process_tree(
             return False
 
 
-def read_capped_output(handle: Any) -> str:
+def read_capped_output(handle: Any, max_chars: int = MAX_CAPTURE_CHARS) -> str:
     handle.flush()
     size = handle.seek(0, os.SEEK_END)
-    handle.seek(max(0, size - (MAX_CAPTURE_CHARS * 4)))
-    return redact(handle.read().decode("utf-8", errors="replace"))
+    handle.seek(max(0, size - (max_chars * 4)))
+    return redact(handle.read().decode("utf-8", errors="replace"), max_chars)
+
+
+@contextmanager
+def posix_signal_cleanup(process: subprocess.Popen[bytes]):
+    """On POSIX, kill the child process group when the parent is interrupted.
+
+    Windows is covered by the Job Object; POSIX needs an explicit handler so a
+    Ctrl-C on the controller does not leave descendant check processes alive.
+    """
+    if os.name == "nt":
+        yield
+        return
+    import signal
+
+    def _kill_child_group(_signum: int, _frame: Any) -> None:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except (ProcessLookupError, OSError):
+            pass
+
+    previous_int = signal.signal(signal.SIGINT, _kill_child_group)
+    previous_term = signal.signal(signal.SIGTERM, _kill_child_group)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGINT, previous_int)
+        signal.signal(signal.SIGTERM, previous_term)
 
 
 def windows_wrapped_command(command: list[str]) -> list[str]:
     return [
         sys.executable,
         str(Path(__file__).resolve()),
-        "_exec-check",
+        "--internal-exec-check",
         json.dumps(command),
     ]
 
@@ -683,6 +710,7 @@ def run_check(
     worktree: Path,
     timeout_seconds: int,
     passthrough: Sequence[str] = (),
+    max_chars: int = MAX_CAPTURE_CHARS,
 ) -> dict[str, Any]:
     started = time.monotonic()
     windows_job: int | None = None
@@ -714,7 +742,8 @@ def run_check(
                 process.stdin.close()
                 process.stdin = None
             try:
-                process.wait(timeout=timeout_seconds)
+                with posix_signal_cleanup(process):
+                    process.wait(timeout=timeout_seconds)
                 timed_out = False
                 returncode = process.returncode
             except subprocess.TimeoutExpired:
@@ -731,8 +760,8 @@ def run_check(
                 "returncode": returncode,
                 "timed_out": timed_out,
                 "duration_seconds": round(time.monotonic() - started, 3),
-                "stdout": read_capped_output(stdout_file),
-                "stderr": read_capped_output(stderr_file),
+                "stdout": read_capped_output(stdout_file, max_chars),
+                "stderr": read_capped_output(stderr_file, max_chars),
             }
         except OSError as exc:
             return {
@@ -740,8 +769,8 @@ def run_check(
                 "returncode": None,
                 "timed_out": False,
                 "duration_seconds": round(time.monotonic() - started, 3),
-                "stdout": read_capped_output(stdout_file),
-                "stderr": redact(str(exc)),
+                "stdout": read_capped_output(stdout_file, max_chars),
+                "stderr": redact(str(exc), max_chars),
             }
 
 
@@ -834,6 +863,7 @@ def init_run(args: argparse.Namespace) -> int:
             "same_failure_limit": args.same_failure_limit,
             "active_budget_seconds": active_budget_seconds,
             "review_grace_minutes": args.review_grace_minutes,
+            "max_capture_chars": args.max_capture_chars,
         },
         "require_review": True,
         "protected_paths": [str(path) for path in protected_paths],
@@ -867,12 +897,22 @@ def init_run(args: argparse.Namespace) -> int:
         "history": [],
     }
     append_event(state, "initialized")
-    with run_lock(state_path):
-        if state_path.exists() or contract_path.exists():
-            raise LoopError(f"Run control files already exist for: {state_path}")
-        write_json_atomic(contract_path, contract)
-        make_readonly(contract_path)
-        write_state(state_path, state)
+    lock_path = state_path.with_name(f"{state_path.name}.lock")
+    try:
+        with run_lock(state_path):
+            if state_path.exists() or contract_path.exists():
+                raise LoopError(f"Run control files already exist for: {state_path}")
+            write_json_atomic(contract_path, contract)
+            make_readonly(contract_path)
+            write_state(state_path, state)
+    except BaseException:
+        # Failed init leaves an orphan lock; remove it so the next attempt
+        # can lock cleanly. Only safe because init created the lock anew.
+        try:
+            lock_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
     print_summary(state, contract)
     return 0
 
@@ -964,7 +1004,13 @@ def verify_iteration(args: argparse.Namespace) -> int:
                 1,
                 min(contract["limits"]["command_timeout_seconds"], remaining),
             )
-            result = run_check(command, worktree, timeout_seconds, passthrough)
+            result = run_check(
+                command,
+                worktree,
+                timeout_seconds,
+                passthrough,
+                contract["limits"].get("max_capture_chars", MAX_CAPTURE_CHARS),
+            )
             results.append(result)
             state["active_seconds"] += result.get("duration_seconds", 0.0)
             if state["active_seconds"] > active_budget:
@@ -1091,7 +1137,7 @@ def record_review(args: argparse.Namespace) -> int:
         state, contract = read_bundle(
             state_path, args.expected_contract_hash, args.expected_state_hash
         )
-        ensure_runtime_contract(state_path, state, contract)
+        worktree = ensure_runtime_contract(state_path, state, contract)
         if state["status"] != "verification_passed":
             raise LoopError(f"Run cannot record review from: {state['status']}")
         try:
@@ -1108,7 +1154,7 @@ def record_review(args: argparse.Namespace) -> int:
             print_summary(state, contract)
             return 3
         current_source_hash = source_fingerprint(
-            Path(contract["worktree"]), contract["git_identity"]["base_commit"]
+            worktree, contract["git_identity"]["base_commit"]
         )
         if current_source_hash != state["last_verification"]["source_fingerprint"]:
             state["status"] = "active"
@@ -1329,6 +1375,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Active check-execution budget; defaults to max-minutes * 60",
     )
+    init_parser.add_argument(
+        "--max-capture-chars",
+        type=bounded_int(1, 65_536),
+        default=MAX_CAPTURE_CHARS,
+        help="Captured output tail per stream (default: 4000)",
+    )
     init_parser.set_defaults(handler=init_run)
 
     next_parser = commands.add_parser("next")
@@ -1391,6 +1443,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def exec_check_main(raw_command: str) -> int:
+    # This trampoline is private to the helper. Reject interactive TTY use so
+    # a user cannot casually treat it as a general command runner.
+    if sys.stdin.isatty():
+        return 127
     try:
         command = parse_command(raw_command)
         if sys.stdin.buffer.read(1) != b"1":
@@ -1405,6 +1461,6 @@ def exec_check_main(raw_command: str) -> int:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 3 and sys.argv[1] == "_exec-check":
+    if len(sys.argv) == 3 and sys.argv[1] == "--internal-exec-check":
         raise SystemExit(exec_check_main(sys.argv[2]))
     raise SystemExit(main())

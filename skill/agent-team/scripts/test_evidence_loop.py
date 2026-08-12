@@ -86,6 +86,7 @@ class EvidenceLoopTests(unittest.TestCase):
             same_failure_limit=same_failure_limit,
             review_grace_minutes=15,
             active_budget_seconds=None,
+            max_capture_chars=4_000,
         )
 
     def state_args(self, **values):
