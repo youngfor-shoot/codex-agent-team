@@ -92,3 +92,23 @@ jobs:
           if (-not (Get-ChildItem -Recurse -File -LiteralPath $backupRoot -Filter 'luna-worker.toml')) {
             throw 'Worker synchronization did not back up the existing managed profile.'
           }
+
+  summary:
+    name: CI summary
+    runs-on: ubuntu-latest
+    needs: [python-tests, cross-platform-installer, synchronization-smoke-test]
+    if: always()
+    steps:
+      - name: Verify all required jobs passed
+        run: |
+          python - <<'PY'
+          import json, os
+          needs = json.loads(os.environ['NEEDS_JSON'])
+          failed = [name for name, job in needs.items() if job['result'] not in ('success', 'skipped')]
+          if failed:
+              print(f"FAILED required jobs: {failed}")
+              raise SystemExit(1)
+          print("All required jobs passed.")
+          PY
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
