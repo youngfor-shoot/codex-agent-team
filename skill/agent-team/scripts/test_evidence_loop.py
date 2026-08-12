@@ -84,6 +84,8 @@ class EvidenceLoopTests(unittest.TestCase):
             max_minutes=max_minutes,
             command_timeout=2,
             same_failure_limit=same_failure_limit,
+            review_grace_minutes=15,
+            active_budget_seconds=None,
         )
 
     def state_args(self, **values):
@@ -381,6 +383,113 @@ class EvidenceLoopTests(unittest.TestCase):
                 3,
             )
         self.assertEqual(self.load()["status"], "stopped_time")
+
+    def test_active_budget_exceeds_stops(self) -> None:
+        # A slow check accumulates active_seconds past a tiny budget.
+        script = self.harness("import time\ntime.sleep(3)\n")
+        args = self.init_args(command=[sys.executable, str(script)])
+        args.active_budget_seconds = 1
+        args.command_timeout = 5
+        evidence_loop.init_run(args)
+        evidence_loop.next_iteration(self.state_args(worker_run_id="worker-active-1"))
+        self.assertEqual(evidence_loop.verify_iteration(self.state_args()), 3)
+        state = self.load()
+        self.assertEqual(state["status"], "stopped_time")
+        self.assertEqual(state["stop_reason"], "active_budget_exceeded")
+
+    def test_review_grace_window_allows_late_review(self) -> None:
+        # Verification passed; review within grace succeeds even past the
+        # original wall-clock deadline.
+        evidence_loop.init_run(self.init_args())
+        evidence_loop.next_iteration(
+            self.state_args(worker_run_id="worker-grace-1")
+        )
+        evidence_loop.verify_iteration(self.state_args())
+        later = evidence_loop.utc_now() + evidence_loop.timedelta(minutes=10)
+        with mock.patch.object(evidence_loop, "utc_now", return_value=later):
+            self.assertEqual(
+                evidence_loop.record_review(
+                    self.state_args(
+                        result="pass",
+                        reason_code=None,
+                        reviewer_run_id="review-grace-1",
+                        reviewer_backend="native-verifier",
+                        artifact_hash="a" * 64,
+                    )
+                ),
+                0,
+            )
+        self.assertEqual(self.load()["status"], "completed")
+
+    def test_review_grace_expired_stops(self) -> None:
+        evidence_loop.init_run(self.init_args())
+        evidence_loop.next_iteration(
+            self.state_args(worker_run_id="worker-grace-expire")
+        )
+        evidence_loop.verify_iteration(self.state_args())
+        # 1 hour is inside the 8x wall-clock backstop but beyond the 15-minute
+        # review grace window, so the run stops for grace expiry, not time.
+        far_future = evidence_loop.utc_now() + evidence_loop.timedelta(hours=1)
+        with mock.patch.object(evidence_loop, "utc_now", return_value=far_future):
+            self.assertEqual(
+                evidence_loop.record_review(
+                    self.state_args(
+                        result="pass",
+                        reason_code=None,
+                        reviewer_run_id="review-grace-expired",
+                        reviewer_backend="native-verifier",
+                        artifact_hash="b" * 64,
+                    )
+                ),
+                3,
+            )
+        self.assertEqual(self.load()["status"], "stopped_time")
+        self.assertEqual(self.load()["stop_reason"], "review_grace_expired")
+
+    def test_inspect_requires_acknowledgement(self) -> None:
+        evidence_loop.init_run(self.init_args())
+        args = mock.Mock(
+            state_file=str(self.state),
+            acknowledge_unpinned=False,
+            verbose=False,
+        )
+        with self.assertRaises(evidence_loop.LoopError):
+            evidence_loop.inspect_run(args)
+
+    def test_inspect_unpinned_records_event(self) -> None:
+        evidence_loop.init_run(self.init_args())
+        args = mock.Mock(
+            state_file=str(self.state),
+            acknowledge_unpinned=True,
+            verbose=True,
+        )
+        self.assertEqual(evidence_loop.inspect_run(args), 0)
+        events = [item["event"] for item in self.load()["history"]]
+        self.assertIn("unpinned_inspection", events)
+
+    def test_abort_unpinned_allowed(self) -> None:
+        evidence_loop.init_run(self.init_args())
+        args = mock.Mock(
+            state_file=str(self.state),
+            expected_contract_hash="",
+            expected_state_hash="",
+            acknowledge_unpinned=True,
+            reason_code="pin_lost",
+        )
+        self.assertEqual(evidence_loop.abort_run(args), 0)
+        self.assertEqual(self.load()["status"], "aborted")
+
+    def test_abort_without_hashes_rejected(self) -> None:
+        evidence_loop.init_run(self.init_args())
+        args = mock.Mock(
+            state_file=str(self.state),
+            expected_contract_hash="",
+            expected_state_hash="",
+            acknowledge_unpinned=False,
+            reason_code="pin_lost",
+        )
+        with self.assertRaises(evidence_loop.LoopError):
+            evidence_loop.abort_run(args)
 
     def test_source_change_after_verification_requires_reverification(self) -> None:
         evidence_loop.init_run(self.init_args())

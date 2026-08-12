@@ -255,6 +255,7 @@ def validate_state_shape(state: dict[str, Any]) -> None:
         "current_worker_run_id",
         "same_failure_streak",
         "history",
+        "active_seconds",
     }
     missing = required.difference(state)
     if missing:
@@ -816,6 +817,7 @@ def init_run(args: argparse.Namespace) -> int:
         frozen_assets[str(path)] = path_fingerprint(path)
 
     created = utc_now()
+    active_budget_seconds = args.active_budget_seconds or (args.max_minutes * 60)
     contract: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "run_id": args.run_id,
@@ -830,12 +832,19 @@ def init_run(args: argparse.Namespace) -> int:
             "max_minutes": args.max_minutes,
             "command_timeout_seconds": args.command_timeout,
             "same_failure_limit": args.same_failure_limit,
+            "active_budget_seconds": active_budget_seconds,
+            "review_grace_minutes": args.review_grace_minutes,
         },
         "require_review": True,
         "protected_paths": [str(path) for path in protected_paths],
         "env_passthrough": env_passthrough,
         "created_at": isoformat(created),
-        "deadline": isoformat(created + timedelta(minutes=args.max_minutes)),
+        # Wall-clock backstop, deliberately much larger than the active budget:
+        # agent-in-the-loop planning between init and verify must not consume
+        # the enforcement budget.
+        "deadline": isoformat(
+            created + timedelta(minutes=args.max_minutes * 8)
+        ),
     }
     pinned_hash = contract_hash(contract)
     state: dict[str, Any] = {
@@ -854,6 +863,7 @@ def init_run(args: argparse.Namespace) -> int:
         "last_verification": None,
         "last_review": None,
         "stop_reason": None,
+        "active_seconds": 0.0,
         "history": [],
     }
     append_event(state, "initialized")
@@ -938,6 +948,7 @@ def verify_iteration(args: argparse.Namespace) -> int:
 
         results: list[dict[str, Any]] = []
         passthrough = contract.get("env_passthrough", [])
+        active_budget = contract["limits"]["active_budget_seconds"]
         for command in contract["checks"]:
             remaining = int(
                 (parse_time(contract["deadline"]) - utc_now()).total_seconds()
@@ -953,7 +964,21 @@ def verify_iteration(args: argparse.Namespace) -> int:
                 1,
                 min(contract["limits"]["command_timeout_seconds"], remaining),
             )
-            results.append(run_check(command, worktree, timeout_seconds, passthrough))
+            result = run_check(command, worktree, timeout_seconds, passthrough)
+            results.append(result)
+            state["active_seconds"] += result.get("duration_seconds", 0.0)
+            if state["active_seconds"] > active_budget:
+                state["status"] = "stopped_time"
+                state["stop_reason"] = "active_budget_exceeded"
+                append_event(
+                    state,
+                    "stopped",
+                    reason="active_budget_exceeded",
+                    active_seconds=state["active_seconds"],
+                )
+                write_state(state_path, state)
+                print_summary(state, contract)
+                return 3
             if utc_now() >= parse_time(contract["deadline"]):
                 state["status"] = "stopped_time"
                 state["stop_reason"] = "max_elapsed_time"
@@ -985,6 +1010,7 @@ def verify_iteration(args: argparse.Namespace) -> int:
             state["same_failure_streak"] = 0
             state["last_failure_fingerprint"] = None
             state["status"] = "verification_passed"
+            state["verification_passed_at"] = isoformat(utc_now())
             append_event(
                 state,
                 "verification_passed",
@@ -1102,6 +1128,19 @@ def record_review(args: argparse.Namespace) -> int:
             write_state(state_path, state)
             print_summary(state, contract)
             return 3
+        # Review grace window: once verification passed, the run may complete
+        # review even if the wall-clock deadline lapsed, within a bounded grace.
+        passed_at = state.get("verification_passed_at")
+        grace_minutes = contract["limits"].get("review_grace_minutes", 15)
+        if passed_at and utc_now() > parse_time(passed_at) + timedelta(
+            minutes=grace_minutes
+        ):
+            state["status"] = "stopped_time"
+            state["stop_reason"] = "review_grace_expired"
+            append_event(state, "stopped", reason="review_grace_expired")
+            write_state(state_path, state)
+            print_summary(state, contract)
+            return 3
         if args.reviewer_run_id in state["worker_run_ids"]:
             raise LoopError("Reviewer must be independent from every worker iteration")
         if args.result == "fail" and not args.reason_code:
@@ -1146,14 +1185,33 @@ def record_review(args: argparse.Namespace) -> int:
     return exit_code
 
 
+def read_state_unpinned(state_path: Path) -> dict[str, Any]:
+    """Read state without hash verification for the deliberate recovery path."""
+    state = read_json(state_path, "state")
+    validate_state_shape(state)
+    return state
+
+
+def read_contract_unpinned(state: dict[str, Any]) -> dict[str, Any]:
+    contract_path = Path(state["contract_file"]).resolve()
+    return read_json(contract_path, "contract")
+
+
 def abort_run(args: argparse.Namespace) -> int:
     if not REASON_CODE_RE.fullmatch(args.reason_code):
         raise LoopError("Abort reason code must use 1-64 lowercase safe characters")
     state_path = Path(args.state_file).expanduser().resolve()
     with run_lock(state_path):
-        state, contract = read_bundle(
-            state_path, args.expected_contract_hash, args.expected_state_hash
-        )
+        if getattr(args, "acknowledge_unpinned", False):
+            state = read_state_unpinned(state_path)
+            contract = read_contract_unpinned(state)
+            append_event(
+                state, "unpinned_abort", reason_code=args.reason_code
+            )
+        else:
+            state, contract = read_bundle(
+                state_path, args.expected_contract_hash, args.expected_state_hash
+            )
         if state["status"] in TERMINAL_STATUSES:
             raise LoopError(f"Run is already terminal: {state['status']}")
         state["status"] = "aborted"
@@ -1161,6 +1219,25 @@ def abort_run(args: argparse.Namespace) -> int:
         append_event(state, "aborted", reason_code=args.reason_code)
         write_state(state_path, state)
     print_summary(state, contract)
+    return 0
+
+
+def inspect_run(args: argparse.Namespace) -> int:
+    """Recovery inspection that does not require pinned hashes."""
+    if not getattr(args, "acknowledge_unpinned", False):
+        raise LoopError("inspect requires --acknowledge-unpinned")
+    state_path = Path(args.state_file).expanduser().resolve()
+    with run_lock(state_path):
+        state = read_state_unpinned(state_path)
+        contract = read_contract_unpinned(state)
+        append_event(state, "unpinned_inspection")
+        write_state(state_path, state)
+    print(
+        "WARNING: unpinned inspection bypassed hash verification. "
+        "Verify the run_id and state path before trusting this output.",
+        file=sys.stderr,
+    )
+    print_summary(state, contract, verbose=args.verbose)
     return 0
 
 
@@ -1243,6 +1320,15 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument(
         "--same-failure-limit", type=bounded_int(1, 5), default=2
     )
+    init_parser.add_argument(
+        "--review-grace-minutes", type=bounded_int(1, 240), default=15
+    )
+    init_parser.add_argument(
+        "--active-budget-seconds",
+        type=bounded_int(1, 14_400),
+        default=None,
+        help="Active check-execution budget; defaults to max-minutes * 60",
+    )
     init_parser.set_defaults(handler=init_run)
 
     next_parser = commands.add_parser("next")
@@ -1271,10 +1357,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     abort_parser = commands.add_parser("abort")
     abort_parser.add_argument("--state-file", required=True)
-    abort_parser.add_argument("--expected-contract-hash", required=True)
-    abort_parser.add_argument("--expected-state-hash", required=True)
+    abort_parser.add_argument("--expected-contract-hash", default="")
+    abort_parser.add_argument("--expected-state-hash", default="")
+    abort_parser.add_argument("--acknowledge-unpinned", action="store_true")
     abort_parser.add_argument("--reason-code", required=True)
     abort_parser.set_defaults(handler=abort_run)
+
+    inspect_parser = commands.add_parser(
+        "inspect", help="Inspect a run without pinned hashes (recovery only)"
+    )
+    inspect_parser.add_argument("--state-file", required=True)
+    inspect_parser.add_argument("--acknowledge-unpinned", action="store_true")
+    inspect_parser.add_argument("--verbose", action="store_true")
+    inspect_parser.set_defaults(handler=inspect_run)
 
     status_parser = commands.add_parser("status")
     status_parser.add_argument("--state-file", required=True)
