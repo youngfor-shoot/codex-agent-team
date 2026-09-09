@@ -35,7 +35,11 @@ second source of truth.
 
 ## Verification
 
-Run from the repository root:
+Choose checks by impact. Skill behavior, routing, or package changes use the
+affected suites below; installer or shared-runtime changes require the complete
+relevant regression and a clean-target install. Documentation-only maintenance
+checks its references and instruction contracts. Run commands from the repository
+root:
 
 ```powershell
 python -m unittest discover -s skill/agent-team/scripts -p "test_*.py"
