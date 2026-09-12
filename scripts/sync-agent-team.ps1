@@ -69,7 +69,40 @@ function Test-ManagedRelativePath {
         "references" { return $extension -eq ".md" }
         "templates" { return $extension -eq ".md" }
         "scripts" { return $extension -eq ".py" }
+        "evals" { return $extension -eq ".json" }
+        "reports" { return $extension -eq ".md" }
+        "tests" { return $parts.Length -ge 3 -and $parts[1] -eq "fixtures" -and $extension -in @(".json", ".md") }
         default { return $false }
+    }
+}
+
+function Assert-ManagedSurfaceSafe {
+    param([Parameter(Mandatory = $true)][string]$Root)
+
+    if (-not (Test-Path -LiteralPath $Root)) {
+        return
+    }
+    $rootItem = Get-Item -Force -LiteralPath $Root
+    if (($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "Managed root must not be a reparse point: $Root"
+    }
+    $relativeTargets = @("SKILL.md", "agents", "references", "scripts", "templates", "evals", "reports", "tests")
+    foreach ($relativeTarget in $relativeTargets) {
+        $target = Join-Path $Root $relativeTarget
+        if (-not (Test-Path -LiteralPath $target)) {
+            continue
+        }
+        $targetItem = Get-Item -Force -LiteralPath $target
+        if (($targetItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "Managed path must not be a reparse point: $target"
+        }
+        if ($targetItem.PSIsContainer) {
+            foreach ($item in Get-ChildItem -Recurse -Force -LiteralPath $target) {
+                if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                    throw "Managed path must not be a reparse point: $($item.FullName)"
+                }
+            }
+        }
     }
 }
 
@@ -151,6 +184,81 @@ function Write-Drift {
     Write-PathGroup "Stale in runtime" $Drift.Stale
 }
 
+function Copy-ManagedFiles {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][array]$Files,
+        [Parameter(Mandatory = $true)][string]$DestinationRoot
+    )
+
+    New-Item -ItemType Directory -Path $DestinationRoot -Force | Out-Null
+    foreach ($file in $Files) {
+        $destinationFile = Join-Path $DestinationRoot $file.RelativePath
+        $destinationDirectory = Split-Path -Parent $destinationFile
+        if (Test-Path -LiteralPath $destinationDirectory -PathType Leaf) {
+            throw "A file blocks the managed destination directory: $destinationDirectory"
+        }
+        if (-not (Test-Path -LiteralPath $destinationDirectory -PathType Container)) {
+            New-Item -ItemType Directory -Path $destinationDirectory -Force | Out-Null
+        }
+        Copy-Item -LiteralPath $file.FullName -Destination $destinationFile -Force
+    }
+}
+
+function Remove-EmptyDirectories {
+    param([Parameter(Mandatory = $true)][string]$Root)
+
+    if (-not (Test-Path -LiteralPath $Root -PathType Container)) {
+        return
+    }
+    $directories = @(
+        Get-ChildItem -Directory -Recurse -LiteralPath $Root |
+            Sort-Object { $_.FullName.Length } -Descending
+    )
+    foreach ($directory in $directories) {
+        if (@(Get-ChildItem -Force -LiteralPath $directory.FullName).Count -eq 0) {
+            Remove-Item -LiteralPath $directory.FullName -Force
+        }
+    }
+}
+
+function Set-ManagedSurface {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][array]$SourceFiles,
+        [Parameter(Mandatory = $true)][string]$DestinationRoot
+    )
+
+    Copy-ManagedFiles $SourceFiles $DestinationRoot
+    $currentFiles = @(Get-ManagedFiles $DestinationRoot)
+    $surfaceDrift = Compare-ManagedFiles $SourceFiles $currentFiles
+    foreach ($relativePath in $surfaceDrift.Stale) {
+        $staleFile = Join-Path $DestinationRoot $relativePath
+        if (Test-Path -LiteralPath $staleFile -PathType Leaf) {
+            Remove-Item -LiteralPath $staleFile -Force
+        }
+    }
+    Remove-EmptyDirectories $DestinationRoot
+    return Compare-ManagedFiles $SourceFiles @(Get-ManagedFiles $DestinationRoot)
+}
+
+function Remove-TemporaryTree {
+    param([Parameter(Mandatory = $true)][string]$Root)
+
+    if (-not (Test-Path -LiteralPath $Root -PathType Container)) {
+        return
+    }
+    foreach ($file in Get-ChildItem -File -Recurse -Force -LiteralPath $Root) {
+        Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue
+    }
+    $directories = @(
+        Get-ChildItem -Directory -Recurse -Force -LiteralPath $Root |
+            Sort-Object { $_.FullName.Length } -Descending
+    )
+    foreach ($directory in $directories) {
+        Remove-Item -LiteralPath $directory.FullName -Force -ErrorAction SilentlyContinue
+    }
+    Remove-Item -LiteralPath $Root -Force -ErrorAction SilentlyContinue
+}
+
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $sourceRoot = Get-AbsolutePath (Join-Path $repositoryRoot "skill\agent-team")
 $destinationRoot = Get-AbsolutePath $Destination
@@ -163,6 +271,8 @@ if ((Test-PathWithin $sourceRoot $destinationRoot) -or (Test-PathWithin $destina
     throw "Source and destination must not overlap."
 }
 
+Assert-ManagedSurfaceSafe $sourceRoot
+Assert-ManagedSurfaceSafe $destinationRoot
 $sourceFiles = @(Get-ManagedFiles $sourceRoot)
 if ($sourceFiles.Count -eq 0) {
     throw "Canonical Skill source contains no managed files."
@@ -210,11 +320,15 @@ if ($Mode -eq "Restore") {
     if (-not $BackupName) {
         throw "Restore requires -BackupName."
     }
+    if ($BackupName -notmatch '^(?!\.{1,2}$)[A-Za-z0-9._-]{1,128}$') {
+        throw "Restore backup name must be a single safe directory name."
+    }
     $backupBase = Join-Path (Split-Path -Parent $destinationRoot) ".agent-team-backups"
     $backupRoot = Join-Path $backupBase $BackupName
     if (-not (Test-Path -LiteralPath $backupRoot -PathType Container)) {
         throw "Backup does not exist: $backupRoot"
     }
+    Assert-ManagedSurfaceSafe $backupRoot
     $operation = "Restore managed agent-team files from $BackupName"
     if (-not $PSCmdlet.ShouldProcess($destinationRoot, $operation)) {
         Write-Output "Restore canceled."
@@ -224,20 +338,68 @@ if ($Mode -eq "Restore") {
     if ($backupFiles.Count -eq 0) {
         throw "Backup contains no managed files: $backupRoot"
     }
-    New-Item -ItemType Directory -Path $destinationRoot -Force | Out-Null
-    foreach ($file in $backupFiles) {
-        $destinationFile = Join-Path $destinationRoot $file.RelativePath
-        $destinationDirectory = Split-Path -Parent $destinationFile
-        if (-not (Test-Path -LiteralPath $destinationDirectory)) {
-            New-Item -ItemType Directory -Path $destinationDirectory -Force | Out-Null
+    $currentFiles = @(Get-ManagedFiles $destinationRoot)
+    $destinationParent = Split-Path -Parent $destinationRoot
+    New-Item -ItemType Directory -Path $destinationParent -Force | Out-Null
+    $transactionRoot = Join-Path $destinationParent (".agent-team-restore-" + [guid]::NewGuid().ToString("N"))
+    $stagedRoot = Join-Path $transactionRoot "staged"
+    $rollbackRoot = Join-Path $transactionRoot "rollback"
+    $restoreFailure = $null
+    $rollbackFailure = $null
+    $commitStarted = $false
+    $preserveTransaction = $false
+    try {
+        Copy-ManagedFiles $backupFiles $stagedRoot
+        $stagedFiles = @(Get-ManagedFiles $stagedRoot)
+        $stagedDrift = Compare-ManagedFiles $backupFiles $stagedFiles
+        if ($stagedDrift.HasDrift) {
+            throw "Staged backup verification failed."
         }
-        Copy-Item -LiteralPath $file.FullName -Destination $destinationFile -Force
+        Copy-ManagedFiles $currentFiles $rollbackRoot
+        $rollbackFiles = @(Get-ManagedFiles $rollbackRoot)
+        $rollbackSnapshotDrift = Compare-ManagedFiles $currentFiles $rollbackFiles
+        if ($rollbackSnapshotDrift.HasDrift) {
+            throw "Rollback snapshot verification failed."
+        }
+
+        $commitStarted = $true
+        $restoredDrift = Set-ManagedSurface $stagedFiles $destinationRoot
+        if ($restoredDrift.HasDrift) {
+            throw "Restore did not converge to the backup."
+        }
     }
-    $restoredFiles = @(Get-ManagedFiles $destinationRoot)
-    $restoredDrift = Compare-ManagedFiles $backupFiles $restoredFiles
-    if ($restoredDrift.HasDrift) {
-        Write-Drift $restoredDrift
-        throw "agent-team restore did not converge to the backup."
+    catch {
+        $restoreFailure = $_.Exception.Message
+        if ($commitStarted) {
+            try {
+                $rollbackDrift = Set-ManagedSurface $rollbackFiles $destinationRoot
+                if ($rollbackDrift.HasDrift) {
+                    Write-Drift $rollbackDrift
+                    $rollbackFailure = "Rollback did not converge."
+                    $preserveTransaction = $true
+                }
+            }
+            catch {
+                $rollbackFailure = $_.Exception.Message
+                $preserveTransaction = $true
+            }
+        }
+    }
+    finally {
+        if (-not $preserveTransaction) {
+            Remove-TemporaryTree $transactionRoot
+        }
+    }
+
+    if ($restoreFailure) {
+        if (-not $commitStarted) {
+            throw "agent-team restore preflight failed: $restoreFailure"
+        }
+        if ($rollbackFailure) {
+            throw "agent-team restore failed and rollback could not complete: $restoreFailure; rollback error: $rollbackFailure. Recovery files: $transactionRoot"
+        }
+        Write-Error "agent-team restore failed and was rolled back: $restoreFailure" -ErrorAction Continue
+        exit 1
     }
     Write-Output "Restored agent-team runtime copy from $BackupName ($($backupFiles.Count) managed files)."
     exit 0
@@ -320,7 +482,10 @@ if (Test-Path -LiteralPath $backupBase -PathType Container) {
             Sort-Object Name -Descending
     )
     foreach ($dir in $backupDirs | Select-Object -Skip $KeepBackups) {
-        Remove-Item -LiteralPath $dir.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        if (-not (Test-PathWithin $dir.FullName $backupBase)) {
+            throw "Refusing to remove a backup outside the backup directory: $($dir.FullName)"
+        }
+        Remove-TemporaryTree $dir.FullName
     }
 }
 exit 0

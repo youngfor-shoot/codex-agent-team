@@ -11,12 +11,17 @@ import argparse
 import datetime
 import hashlib
 import os
+import re
 import shutil
+import stat
 import sys
+import tempfile
 from pathlib import Path
 from typing import TypedDict
 
-__version__ = "0.3.0"
+__version__ = "0.5.5"
+SAFE_BACKUP_NAME_RE = re.compile(r"^(?!\.{1,2}$)[A-Za-z0-9._-]{1,128}$")
+MANAGED_DIRECTORIES = ("agents", "references", "scripts", "templates", "evals", "reports", "tests")
 
 
 def normalized_hash(path: Path) -> str:
@@ -39,7 +44,40 @@ def managed_relative_path(relative_path: str) -> bool:
         return extension == ".md"
     if root == "scripts":
         return extension == ".py"
+    if root == "evals":
+        return extension == ".json"
+    if root == "reports":
+        return extension == ".md"
+    if root == "tests":
+        return len(parts) >= 3 and parts[1] == "fixtures" and extension in {".json", ".md"}
     return False
+
+
+def is_link_like(path: Path) -> bool:
+    try:
+        attributes = getattr(path.lstat(), "st_file_attributes", 0)
+    except OSError:
+        return False
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    return path.is_symlink() or bool(attributes & reparse_flag)
+
+
+def assert_managed_surface_safe(root: Path) -> None:
+    if not root.exists():
+        return
+    candidates = [root / "SKILL.md", *(root / name for name in MANAGED_DIRECTORIES)]
+    for candidate in candidates:
+        if not candidate.exists() and not candidate.is_symlink():
+            continue
+        if is_link_like(candidate):
+            raise OSError(f"Managed path must not be a link or reparse point: {candidate}")
+        if candidate.is_dir():
+            for descendant in candidate.rglob("*"):
+                if is_link_like(descendant):
+                    raise OSError(
+                        "Managed path must not be a link or reparse point: "
+                        f"{descendant}"
+                    )
 
 
 def managed_files(root: Path) -> list[dict[str, str]]:
@@ -103,6 +141,41 @@ def write_drift(drift: Drift) -> None:
             print(f"  - {path}")
 
 
+def copy_managed_files(files: list[dict[str, str]], destination_root: Path) -> None:
+    destination_root.mkdir(parents=True, exist_ok=True)
+    for item in files:
+        destination_file = destination_root / item["relative_path"]
+        destination_file.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(item["full_name"], destination_file)
+
+
+def prune_empty_directories(root: Path) -> None:
+    for directory in sorted(
+        (path for path in root.rglob("*") if path.is_dir()),
+        key=lambda path: len(path.parts),
+        reverse=True,
+    ):
+        try:
+            if not any(directory.iterdir()):
+                directory.rmdir()
+        except OSError:
+            pass
+
+
+def converge_managed_surface(
+    source_files: list[dict[str, str]], destination_root: Path
+) -> Drift:
+    copy_managed_files(source_files, destination_root)
+    current_files = managed_files(destination_root)
+    drift = compare_managed(source_files, current_files)
+    for relative_path in drift["stale"]:
+        stale_path = destination_root / relative_path
+        if stale_path.is_file():
+            stale_path.unlink()
+    prune_empty_directories(destination_root)
+    return compare_managed(source_files, managed_files(destination_root))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Verify, install, uninstall, or restore the agent-team Skill runtime copy."
@@ -148,25 +221,32 @@ def main() -> int:
         print(f"Canonical Skill source is missing: {source_root}", file=sys.stderr)
         return 1
 
+    overlap = False
     try:
         source_root.relative_to(destination_root)
         overlap = True
     except ValueError:
-        overlap = False
+        pass
     try:
         destination_root.relative_to(source_root)
         overlap = True
     except ValueError:
-        overlap = False
+        pass
     if overlap:
         print("Source and destination must not overlap.", file=sys.stderr)
         return 1
 
-    source_files = managed_files(source_root)
+    try:
+        assert_managed_surface_safe(source_root)
+        assert_managed_surface_safe(destination_root)
+        source_files = managed_files(source_root)
+        destination_files = managed_files(destination_root)
+    except (OSError, UnicodeError) as exc:
+        print(f"Cannot inspect managed Skill surface: {exc}", file=sys.stderr)
+        return 1
     if not source_files:
         print("Canonical Skill source contains no managed files.", file=sys.stderr)
         return 1
-    destination_files = managed_files(destination_root)
     drift = compare_managed(source_files, destination_files)
 
     if args.mode == "Verify":
@@ -216,13 +296,25 @@ def main() -> int:
         if not args.backup_name:
             print("Restore requires --backup-name.", file=sys.stderr)
             return 1
-        backup_root = (
-            destination_root.parent / ".agent-team-backups" / args.backup_name
-        )
+        if not SAFE_BACKUP_NAME_RE.fullmatch(args.backup_name):
+            print("Restore backup name must be a single safe directory name.", file=sys.stderr)
+            return 1
+        backup_base = (destination_root.parent / ".agent-team-backups").resolve()
+        backup_root = (backup_base / args.backup_name).resolve()
+        try:
+            backup_root.relative_to(backup_base)
+        except ValueError:
+            print("Restore backup path escapes the backup directory.", file=sys.stderr)
+            return 1
         if not backup_root.is_dir():
             print(f"Backup does not exist: {backup_root}", file=sys.stderr)
             return 1
-        backup_files = managed_files(backup_root)
+        try:
+            assert_managed_surface_safe(backup_root)
+            backup_files = managed_files(backup_root)
+        except (OSError, UnicodeError) as exc:
+            print(f"Cannot inspect backup surface: {exc}", file=sys.stderr)
+            return 1
         if not backup_files:
             print(f"Backup contains no managed files: {backup_root}", file=sys.stderr)
             return 1
@@ -234,20 +326,69 @@ def main() -> int:
             if answer not in {"y", "yes"}:
                 print("Restore canceled.")
                 return 2
-        destination_root.mkdir(parents=True, exist_ok=True)
-        for item in backup_files:
-            destination_file = destination_root / item["relative_path"]
-            destination_file.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(item["full_name"], destination_file)
-        restored = managed_files(destination_root)
-        restored_drift = compare_managed(backup_files, restored)
-        if restored_drift["has_drift"]:
-            write_drift(restored_drift)
-            print(
-                "agent-team restore did not converge to the backup.",
-                file=sys.stderr,
+        destination_root.parent.mkdir(parents=True, exist_ok=True)
+        current_files = managed_files(destination_root)
+        transaction_root = Path(
+            tempfile.mkdtemp(
+                prefix=".agent-team-restore-", dir=destination_root.parent
             )
-            return 1
+        )
+        preserve_transaction = False
+        try:
+            staged_root = transaction_root / "staged"
+            rollback_root = transaction_root / "rollback"
+            try:
+                copy_managed_files(backup_files, staged_root)
+                staged_files = managed_files(staged_root)
+                staged_drift = compare_managed(backup_files, staged_files)
+                if staged_drift["has_drift"]:
+                    raise OSError("staged backup verification failed")
+                copy_managed_files(current_files, rollback_root)
+                rollback_files = managed_files(rollback_root)
+                rollback_drift = compare_managed(current_files, rollback_files)
+                if rollback_drift["has_drift"]:
+                    raise OSError("rollback snapshot verification failed")
+            except (OSError, UnicodeError) as exc:
+                print(f"agent-team restore preflight failed: {exc}", file=sys.stderr)
+                return 1
+
+            try:
+                restored_drift = converge_managed_surface(
+                    staged_files, destination_root
+                )
+                if restored_drift["has_drift"]:
+                    raise OSError("restore did not converge to the backup")
+            except (OSError, UnicodeError) as exc:
+                try:
+                    rollback_drift = converge_managed_surface(
+                        rollback_files, destination_root
+                    )
+                except (OSError, UnicodeError) as rollback_exc:
+                    preserve_transaction = True
+                    print(
+                        "agent-team restore failed and rollback could not complete: "
+                        f"{exc}; rollback error: {rollback_exc}. "
+                        f"Recovery files: {transaction_root}",
+                        file=sys.stderr,
+                    )
+                    return 1
+                if rollback_drift["has_drift"]:
+                    preserve_transaction = True
+                    write_drift(rollback_drift)
+                    print(
+                        "agent-team restore failed and rollback did not converge. "
+                        f"Recovery files: {transaction_root}",
+                        file=sys.stderr,
+                    )
+                    return 1
+                print(
+                    f"agent-team restore failed and was rolled back: {exc}",
+                    file=sys.stderr,
+                )
+                return 1
+        finally:
+            if not preserve_transaction:
+                shutil.rmtree(transaction_root, ignore_errors=True)
         print(
             f"Restored agent-team runtime copy from {args.backup_name} "
             f"({len(backup_files)} managed files)."

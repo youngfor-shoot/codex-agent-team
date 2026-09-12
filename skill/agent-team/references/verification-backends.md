@@ -18,11 +18,16 @@ dependencies:
 - The reviewer returns human-readable findings labelled `BLOCKER`, `MAJOR`, or
   `MINOR` and a `finding_severity` handoff value; the controller remains the
   acceptance authority.
-- Everything runs inside Codex's existing read-only tools; no MCP server,
-  model quota, or external service is involved.
+- Use read-only instructions and tools; a separate context is not an OS
+  sandbox. Native review consumes model usage but requires no additional MCP
+  server or external provider setup. Select a supported model appropriate to
+  the named residual risk; use the runtime rules in `implementation-lanes.md`
+  for an Astra override. Same-model independent review is valid; different
+  models do not guarantee independent errors.
 
-Because the default backend is available on every Codex installation, a
-`required` review gate never depends on an unavailable integration.
+Check that native delegation is actually callable on the current host. If it
+is unavailable, keep required review pending and report the limitation; never
+replace it with controller self-review while claiming independence.
 
 ## Optional adapter: AgentParliament (Reasonix seats)
 

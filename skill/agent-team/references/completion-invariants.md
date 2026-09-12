@@ -17,8 +17,11 @@ Before reporting whole-task completion:
 3. Confirm every required phase is `verified`.
 4. Confirm no core feature or human gate remains in blocking gaps.
 5. Confirm every Completion Criteria and Integration Checklist item is checked.
-6. Confirm Final State is `completed`, the timestamp is final, and remaining
-   risks are `none`.
+6. Confirm Final State is `completed`, the timestamp is final, and no unresolved
+   acceptance-blocking risk remains. In the existing task-packet schema,
+   `remaining_risks: none` records that narrow condition; it does not assert zero
+   uncertainty. Record bounded non-blocking limitations in the evidence or
+   limitations narrative instead of concealing them to satisfy the validator.
 7. When available, run
    `scripts/validate_task_packet.py <absolute-task-packet> --require-complete`.
 
