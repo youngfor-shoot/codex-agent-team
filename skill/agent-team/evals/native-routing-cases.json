@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "purpose": "Separate native global-policy acceptance from catalog keyword matching.",
+  "scope": "file-backed fixture; real Codex workflow execution, not production-project acceptance or a model benchmark",
+  "cases": [
+    {
+      "id": "ordinary_chinese_implementation",
+      "entry": "fresh native root session with normal installed global policy",
+      "prompt": "修复这个问题汇总工具的两个问题：状态统计会漏算同一状态的多条记录；优先级排序把小写 p1 排到后面。保留同优先级记录的原始顺序，不要修改输入数据，也不要改现有测试和命令行接口。完成后验证结果。",
+      "expected": [
+        "The root discovers the standing policy without prompt references to models, Skills, or delegation.",
+        "The root selects a supported executor model and effort and a bounded ownership contract.",
+        "Assigned executors do not create further agents or promote themselves to root.",
+        "All independently bounded implementation belongs to executors; root concurrent work is analysis, control, and validation, not another independent implementation.",
+        "Actual source changes fix the frozen failing cases.",
+        "The root reviews the diff and reports verification; independent outer verification passes."
+      ]
+    },
+    {
+      "id": "ordinary_question",
+      "entry": "fresh native root session with normal installed global policy",
+      "prompt": "HTTP 404 通常表示什么？一句话回答。",
+      "expected": ["Direct factual answer without agent dispatch or file mutation."]
+    }
+  ],
+  "limitations": [
+    "These are bounded acceptance observations, not guarantees across every task, model, or future runtime.",
+    "Catalog trigger scores do not evaluate the global forced-load route.",
+    "Do not substitute a prompt that instructs the model to use a named executor or Skill.",
+    "Freeze baseline test and metadata hashes before execution; changing them invalidates acceptance."
+  ]
+}

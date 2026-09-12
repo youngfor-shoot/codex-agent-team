@@ -1,0 +1,20 @@
+{
+  "evaluation_scope": "Catalog-description heuristic only. These labels do not determine the installed root-only global forced-load route. Native global-policy acceptance is specified in native-routing-cases.json.",
+  "recommended_threshold": 0.48,
+  "should_trigger": [
+    {"family": "explicit", "text": "Use $agent-team to complete this bounded migration with an executor and controller acceptance."},
+    {"family": "execution-first", "text": "Use $agent-team to delegate this tiny one-file edit while you review its acceptance check."},
+    {"family": "explicit", "text": "Create a temporary team to delegate this exact implementation while you validate the API contract."},
+    {"family": "monitoring", "text": "Use $agent-team for a persistent team with a recurring follow-up and explicit stop condition."}
+  ],
+  "should_not_trigger": [
+    {"family": "ordinary-work", "text": "Fix this one-line typo directly."},
+    {"family": "content", "text": "Translate this paragraph into Chinese."},
+    {"family": "implicit", "text": "This has two files; choose the smallest safe implementation."}
+  ],
+  "near_neighbor": [
+    {"family": "user-owned-task", "text": "Open a new user-owned Codex task for this project."},
+    {"family": "automation", "text": "Create an automation that checks this every morning."},
+    {"family": "unbounded", "text": "Use as many agents as possible to improve everything in this repository."}
+  ]
+}
