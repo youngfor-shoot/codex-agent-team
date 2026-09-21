@@ -66,7 +66,7 @@ REQUIRED_HANDOFF_FREE_TEXT_FIELDS = {
     "next_authorized_step",
 }
 CONTRACT_VERSION = 1
-__version__ = "0.5.5"
+__version__ = "0.5.6"
 
 
 def exact_lines(text: str) -> set[str]:

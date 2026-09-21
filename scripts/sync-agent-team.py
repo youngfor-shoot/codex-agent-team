@@ -19,7 +19,7 @@ import tempfile
 from pathlib import Path
 from typing import TypedDict
 
-__version__ = "0.5.5"
+__version__ = "0.5.6"
 SAFE_BACKUP_NAME_RE = re.compile(r"^(?!\.{1,2}$)[A-Za-z0-9._-]{1,128}$")
 MANAGED_DIRECTORIES = ("agents", "references", "scripts", "templates", "evals", "reports", "tests")
 

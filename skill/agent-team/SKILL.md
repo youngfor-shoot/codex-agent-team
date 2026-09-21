@@ -2,7 +2,7 @@
 name: agent-team
 description: 'Preview or coordinate minimal safe native delegation. Use for explicit Agent Team, bounded delegation, persistent teams, or monitoring. For ROOT, explicit invocation authorizes selection; implicit matching only recommends and never creates Agents, tasks, or Automations.'
 metadata:
-  version: '0.5.5'
+  version: '0.5.6'
 ---
 
 # Agent Team

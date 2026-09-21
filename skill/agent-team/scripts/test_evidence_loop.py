@@ -778,6 +778,23 @@ class EvidenceLoopTests(unittest.TestCase):
             evidence_loop.run_check([sys.executable, "acceptance.py"], self.worktree, 3)
         terminate.assert_called_once_with(process, None)
 
+    def test_cancellation_survives_cleanup_errors(self) -> None:
+        from contextlib import nullcontext
+
+        for cancellation in (KeyboardInterrupt(), SystemExit(143)):
+            with self.subTest(cancellation=type(cancellation).__name__):
+                process = mock.Mock()
+                process.wait.side_effect = cancellation
+                with (
+                    mock.patch.object(evidence_loop.subprocess, "Popen", return_value=process),
+                    mock.patch.object(evidence_loop, "create_windows_kill_job", return_value=None),
+                    mock.patch.object(evidence_loop, "posix_signal_cleanup", return_value=nullcontext()),
+                    mock.patch.object(evidence_loop, "terminate_process_tree", side_effect=PermissionError("cleanup denied")),
+                    self.assertRaises(type(cancellation)) as raised,
+                ):
+                    evidence_loop.run_check(["python", "check.py"], self.worktree, 1)
+                self.assertIs(raised.exception, cancellation)
+
     def test_sigterm_cleanup_propagates_exit_and_restores_handlers(self) -> None:
         import signal
 
@@ -824,7 +841,8 @@ class EvidenceLoopTests(unittest.TestCase):
                     [sys.executable, "-B", str(driver)],
                     capture_output=True, text=True, timeout=8, check=False,
                 )
-                self.assertNotEqual(result.returncode, 0, result.stderr)
+                expected_exit = -signal.SIGINT if signum == signal.SIGINT else 128 + signum
+                self.assertEqual(result.returncode, expected_exit, result.stderr)
                 self.assertFalse(marker.exists(), "cancellation continued into the following check")
 
     def test_windows_wrapper_preserves_check_command(self) -> None:

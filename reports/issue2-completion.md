@@ -74,8 +74,42 @@ execution for one typo, read-only weekly preview, and disjoint temporary work.
 It found one optional-packet wording contradiction, which was corrected.
 This is instruction-conformance evidence, not a model benchmark.
 
-Stage 4 remains pending. A generated Ruff cache was moved outside the checkout
-after verification accounting detected it; subsequent lint uses no cache.
+A generated Ruff cache was moved outside the checkout after verification
+accounting detected it; subsequent lint uses no cache.
+
+### Stage 4: executable evidence and release acceptance
+
+The new walkthrough regression first failed because no executable helper
+existed. The implemented helper now passes three real CLI integration tests:
+fail/repair/pass with explicit review, refusal to overwrite an existing output,
+and rejection of source drift after verification. A standalone captured run
+was separately inspected by native reviewer `/root/audit_issue_spec` and then
+recorded as completed. `examples/03-evidence-loop-session.md` contains its full
+transcript and review artifact, with an automated artifact-hash consistency
+check. Scripted repair and synthetic test-review fixtures are explicitly
+distinguished from the separately observed review.
+
+The published one-shot preview example incorrectly proposed a heartbeat. Its
+new executable scenario check first failed; the corrected example now proposes
+no wakeup and passes the same static routing rules as the fixture suite.
+
+The full package suite (108 discovered tests) and repository suite (57 tests,
+one Windows symlink-privilege skip) passed locally. Ruff, strict mypy across
+six production modules, metadata, template, and both task-packet examples passed.
+Installer tests include clean-target installation and restoration recovery.
+Windows skips real POSIX signals and unavailable symlink operations; the CI
+Linux/macOS matrix must exercise the platform-specific paths before merge.
+Release acceptance and trust boundaries are recorded in `issue2-review.md`.
+
+Independent release review then found that a cleanup OSError could mask the
+original cancellation, plus ineffective hidden-backup path comparisons. Both
+were accepted and repaired. The added cancellation test reproduced two failures
+before the fix and passes for both original exception identities afterward;
+both corrected installer backup tests pass. Ruff and mypy pass for the changed
+cancellation code. A focused independent recheck accepted both fixes. The
+walkthrough was recaptured and independently rechecked on the final helper.
+The final package suite contains 109 tests; final cross-platform execution is
+reported by the PR's required CI checks.
 
 ## Delegation evidence
 
@@ -83,6 +117,11 @@ Stage 1 uses one bounded executor for the two installers and their tests while
 the controller owns this plan and acceptance. Requested lane: Terra, high effort,
 because preservation and failure handling span two platform implementations.
 Effective model and effort are unknown without runtime attestation.
+
+Stage 3 uses one bounded Terra/high executor for validator/routing code and
+tests, while ROOT owns disjoint policy documents. The same executor later
+updates three publication documents. ROOT owns walkthrough implementation and
+acceptance. Independent reading/review contexts do not own implementation.
 
 ## Release and maintenance boundary
 
@@ -94,4 +133,5 @@ runtime update must use the synchronizer and its backup/verification path.
 This report does not authorize overriding unrelated installed adaptations.
 
 No model benchmark, native-tool isolation, or operating-system sandbox guarantee
-is claimed. Public release readiness remains pending until stage 4 is complete.
+is claimed. The protected GitHub `CI summary` gate must pass on the final
+candidate before merge; a release tag must resolve to the accepted merge commit.

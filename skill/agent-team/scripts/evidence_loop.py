@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-__version__ = "0.5.5"
+__version__ = "0.5.6"
 SCHEMA_VERSION = 1
 MAX_CAPTURE_CHARS = 4_000
 MAX_HISTORY_EVENTS = 40
@@ -769,10 +769,13 @@ def run_check(
                 windows_job = None
                 if not terminated:
                     returncode = -1
-            except (KeyboardInterrupt, SystemExit):
-                terminate_process_tree(process, windows_job)
-                windows_job = None
-                raise
+            except (KeyboardInterrupt, SystemExit) as cancellation:
+                try:
+                    terminate_process_tree(process, windows_job)
+                finally:
+                    windows_job = None
+                    # Cleanup failure must never turn cancellation into a check result.
+                    raise cancellation
             finally:
                 close_windows_handle(windows_job)
             return {

@@ -25,31 +25,23 @@ agents/
 ## Optional Implementation Lanes
 
 Agent Team remains the sole owner of topology, scope, architecture,
-integration, verification, review selection, and final acceptance. The two
-companion roles apply only to bounded native subagent implementation inside a
-temporary workflow:
+integration, verification, review selection, and final acceptance. A small or
+sequential task stays on the direct ROOT route when delegation has no useful
+independent outcome. ROOT may also retain a disjoint implementation scope while
+an executor handles another bounded scope.
 
-- `luna_worker` is the preferred lane when objective, ownership, interfaces,
-  constraints, and verification are explicit and the result is largely
-  determined by the specification.
-- `terra_worker` is selected when correctness depends on substantial
-  repository context, non-trivial implementation judgment, concurrency,
-  security-sensitive paths, cross-module contracts, difficult debugging, or a
-  wider blast radius. Task size alone does not select Terra.
+For a temporary implementation delegation, inspect the live runtime first and
+select an available agent type, model, and effort using the canonical
+[runtime matrix](skill/agent-team/references/implementation-lanes.md). The
+matrix, rather than a forced Luna rule, is the source of truth for choosing a
+bounded implementation lane. Record the selected `agent_type`, requested
+model, requested effort, and reason in Mission; effective runtime identity
+remains `unknown` unless the runtime attests it.
 
-Every spawn uses `fork_turns: none` and the existing Guidance / Context /
-Mission assignment. Record the selected `agent_type` in Mission. A Luna result
-may escalate once to Terra only after the controller inspects the failure,
-corrects the specification, and records why the original route was wrong.
-
-At task creation, inspect callable native agent types. If a preferred companion
-role is unavailable, report that routing limitation and use an explicitly
-identified available native implementation role under the same ownership and
-verification contract. Never claim that Luna or Terra ran without runtime
-evidence.
-
-Companion roles are not persistent-team identities and never activate an
-independent review. The existing named residual-risk gate remains unchanged.
+Every native child uses `fork_turns: none` and the existing Guidance / Context /
+Mission assignment. Companion roles are not persistent-team identities and
+never activate independent review; the named residual-risk gate remains
+unchanged.
 
 ## Dispatch And Review-Finding Contract
 
@@ -63,8 +55,10 @@ by the existing canonical child fields:
 - `Mission`: bounded goal, ownership, deliverable, acceptance, next authorized
   step, and stop conditions.
 
-These headings are a presentation layer, not a second state model. The task
-packet remains authoritative when wording conflicts or becomes stale.
+These headings are a presentation layer, not a second state model. Create a
+task packet when project rules require one; otherwise the controller's scoped
+assignment is sufficient. When present, the task packet remains authoritative
+if wording conflicts or becomes stale.
 
 In an independent review, label each candidate finding `BLOCKER`, `MAJOR`, or
 `MINOR` in the human-readable response and set `finding_severity` in the fixed
@@ -85,28 +79,32 @@ risk-matched review gate.
 
 ## Managed Surface
 
-The synchronizers consider only:
+The main synchronizers manage `SKILL.md` and seven visible directories:
+`agents/`, `references/`, `scripts/`, `templates/`, `evals/`, `reports/`, and
+`tests/`. Within those directories, the managed surface is deliberately narrow:
+YAML in `agents/`; Markdown in `references/`, `templates/`, and `reports/`;
+Python in `scripts/`; JSON in `evals/`; and JSON or Markdown only below
+`tests/fixtures/`.
 
-- `SKILL.md`
-- Markdown files below `references/` and `templates/`
-- YAML files below `agents/`
-- Python files below `scripts/`
+Hidden path components and unrecognized paths are outside that surface. They
+are neither copied nor removed. Do not place credentials in repository files or
+the managed runtime surface. The helper also rejects links and reparse points
+on visible managed paths, preserving the managed-surface boundary.
 
-It ignores bytecode, `__pycache__`, dotfiles, credentials, and every other file.
-
-The Python helper `scripts/sync-agent-team.py` mirrors the PowerShell helper
-with `--mode Verify|Install`, `--destination <path>`, and `--yes` for
-non-interactive installs; it uses the same managed-file set, backup, and
-normalized-SHA-256 verification semantics.
+Both `scripts/sync-agent-team.py` and `scripts/sync-agent-team.ps1` support
+`Verify`, `Install`, `Restore`, and `Uninstall`. Python accepts `--mode`,
+`--destination <path>`, `--backup-name`, and `--yes`; PowerShell uses the
+matching `-Mode`, `-Destination`, and `-BackupName` parameters. Both use the
+same managed-file set, backups, and normalized-SHA-256 comparison semantics.
 
 The separate `scripts/sync-worker-agents.ps1` helper manages exactly:
 
 - canonical `agents/luna-worker.toml` to `~/.codex/agents/luna-worker.toml`;
 - canonical `agents/terra-worker.toml` to `~/.codex/agents/terra-worker.toml`.
 
-It supports the same `Verify` and explicit `Install` modes, creates a backup of
-existing managed destinations before replacement, compares normalized SHA-256
-hashes, and leaves every unrelated global Agent file untouched.
+It supports `Verify` and explicit `Install`, creates a backup of existing
+managed destinations before replacement, compares normalized SHA-256 hashes,
+and leaves every unrelated global Agent file untouched.
 
 After a successful worker-profile install and post-copy hash check, the helper
 must explicitly return exit code zero so an earlier caller-side drift probe
@@ -125,8 +123,9 @@ satisfy the contract.
 - `README.md` owns public setup, usage, and verification guidance.
 - `LICENSE` contains the Apache-2.0 terms.
 - `SECURITY.md` routes sensitive reports away from public issues.
-- `.github/workflows/ci.yml` runs Python unit tests on Linux and Windows, then
-  installs and verifies the managed Skill surface in a temporary Windows path.
+- `.github/workflows/ci.yml` runs Python unit tests on Linux, macOS, and
+  Windows; it also exercises the Python installer on Linux and macOS and the
+  PowerShell install/verify smoke cycle on Windows.
 - Public history and tracked files must not contain maintainer-specific absolute
   paths, credentials, caches, or scratch artifacts.
 
@@ -147,7 +146,26 @@ one concise drift report, and exit nonzero on any difference. Never write.
 5. Re-run the same hash comparison and fail if equality was not reached.
 
 PowerShell `ShouldProcess` protects the mutation boundary. Unknown and ignored
-destination files remain untouched.
+destination files remain untouched. If managed-file removal creates an empty
+ancestor directory, cleanup removes only that empty ancestor and stops as soon
+as it encounters a nonempty directory.
+
+### Restore
+
+Validate the requested backup name and managed backup surface before mutation.
+Stage and hash-check the backup, retain a rollback snapshot of the current
+managed surface, then converge the runtime to the backup's managed files. On a
+restore failure, attempt rollback and retain recovery files if rollback cannot
+converge. Unrelated and hidden destination content remains outside the restore
+surface.
+
+### Uninstall
+
+Prompt unless explicitly confirmed, remove only discovered managed runtime
+files, then re-enumerate the managed surface. Report failure if any managed
+file remains; do not report an uninstall as successful merely because some
+files were removed. Preserve unrelated files and prune only empty ancestors
+created by the removal.
 
 ## Failure Behavior
 
@@ -155,6 +173,7 @@ destination files remain untouched.
 - Reject source and destination resolving to the same path.
 - Do not start installation if backup creation fails.
 - Return a nonzero exit code on drift, copy failure, or post-install mismatch.
+- Return a nonzero exit code when uninstall leaves any managed file behind.
 - Return zero after a successful install even when an earlier command in the
   caller reported drift.
 - Print relative paths, never file contents.

@@ -20,8 +20,8 @@ Task size: medium
 Recommended topology: temporary
   - one objective, bounded handoffs, no role state that must survive checkpoints
 
-Recommended wakeup: heartbeat
-  - controller reports back to this task on each phase transition
+Recommended wakeup: none
+  - one-shot request; ordinary progress messages need no Automation
 
 Recommended convergence: phase-gated
   - implementation completes first, then a visual review of error wording
@@ -37,7 +37,8 @@ Proposed workstreams:
   - Lane: implement import validation (luna_worker preferred; bounded, spec-determined)
   - Integration: Codex integrates and runs focused checks
 
-Allowed mutation boundary: auth/migrate/import.py, its unit tests, fixtures
+Proposed execution boundary after authorization: auth/migrate/import.py, its unit tests, fixtures
+Current preview mutation boundary: none
 
 Deterministic verification:
   - python -m unittest discover -s tests/migrate -p "test_import*.py"
@@ -45,7 +46,30 @@ Deterministic verification:
 Execution budget: 4 iterations / 45 minutes / 900s command timeout
 Stop conditions: acceptance assets changed, same failure twice, budget exhausted
 
-Monitoring: heartbeat on this task; status fields: phase, verification, review
+Monitoring: none; ordinary in-task progress reports phase, verification, review
+```
+
+Machine-checkable form of the same request and decisions:
+
+```json
+{
+  "id": "example-01-preview",
+  "request": "Use $agent-team preview: add import validation to the authentication migration and verify it.",
+  "authority": "explicit-invocation",
+  "expect": {
+    "topology": "temporary",
+    "wakeup": "none",
+    "convergence": "phase-gated",
+    "independent_review_gate": "required",
+    "review_trigger": "data-migration-overwrite-loss",
+    "review_stop_condition": "One read-only pass and at most one focused recheck",
+    "creates_agents": false,
+    "creates_user_owned_tasks": false,
+    "creates_automations": false,
+    "side_effects": [],
+    "human_gates": ["none"]
+  }
+}
 ```
 
 ## Notes
