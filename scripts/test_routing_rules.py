@@ -11,7 +11,12 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from routing_rules import authority_from_request, validate_expect, validate_scenario
+from routing_rules import (
+    authority_from_request,
+    preview_from_request,
+    validate_expect,
+    validate_scenario,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -186,6 +191,66 @@ class RoutingConformanceTests(unittest.TestCase):
             "explicit-invocation",
         )
         self.assertEqual(authority_from_request("Fix the test."), "implicit")
+
+    def test_explicit_preview_directive_requires_read_only_action_proof(self) -> None:
+        base_expect = {
+            "topology": "single",
+            "wakeup": "none",
+            "convergence": "single-pass",
+            "independent_review_gate": "not-required",
+            "independent_review_status": "not-applicable",
+            "human_gates": ["none"],
+        }
+        action_proof = {
+            "creates_agents": False,
+            "creates_user_owned_tasks": False,
+            "creates_automations": False,
+            "side_effects": [],
+        }
+
+        def errors_for(expect: dict[object, object]) -> list[str]:
+            return validate_scenario(
+                {
+                    "id": "preview-action-proof",
+                    "request": "Use $agent-team preview: prepare the release.",
+                    "authority": "explicit-invocation",
+                    "expect": expect,
+                }
+            )
+
+        for field in (
+            "creates_agents",
+            "creates_user_owned_tasks",
+            "creates_automations",
+        ):
+            for value in (True, 0, "false"):
+                with self.subTest(field=field, value=value):
+                    errors = errors_for({**base_expect, **action_proof, field: value})
+                    self.assertIn(f"preview requires {field}=false", errors)
+            with self.subTest(field=field, value="missing"):
+                incomplete = {**base_expect, **action_proof}
+                del incomplete[field]
+                self.assertIn(
+                    f"preview requires {field}=false", errors_for(incomplete)
+                )
+
+        for value in (["write files"], (), None):
+            with self.subTest(side_effects=value):
+                errors = errors_for({**base_expect, **action_proof, "side_effects": value})
+                self.assertIn("preview requires side_effects=[]", errors)
+        missing_side_effects = {**base_expect, **action_proof}
+        del missing_side_effects["side_effects"]
+        self.assertIn(
+            "preview requires side_effects=[]", errors_for(missing_side_effects)
+        )
+
+    def test_preview_directive_detection_avoids_implement_preview_button_neighbor(self) -> None:
+        self.assertTrue(
+            preview_from_request("Use $agent-team preview: prepare the release.")
+        )
+        self.assertFalse(
+            preview_from_request("Implement the $agent-team preview-button control.")
+        )
 
     def test_invalid_expect_reports_cross_field_errors(self) -> None:
         errors = validate_expect(

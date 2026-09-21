@@ -240,6 +240,71 @@ class TaskPacketValidatorTests(unittest.TestCase):
 
         self.assertIn("packet duplicate handoff field: finding_severity", errors)
 
+    def test_packet_rejects_unknown_handoff_control_values(self) -> None:
+        invalid_severity = validate_packet(
+            packet().replace("finding_severity: none", "finding_severity: banana"),
+            require_complete=False,
+        )
+        invalid_alignment = validate_packet(
+            packet().replace("goal_alignment: aligned", "goal_alignment: banana"),
+            require_complete=False,
+        )
+        empty_controls = validate_packet(
+            packet()
+            .replace("finding_severity: none", "finding_severity: ")
+            .replace("goal_alignment: aligned", "goal_alignment: "),
+            require_complete=False,
+        )
+
+        self.assertIn(
+            "finding_severity must be one of ['BLOCKER', 'MAJOR', 'MINOR', "
+            "'none'], found 'banana'",
+            invalid_severity,
+        )
+        self.assertIn(
+            "goal_alignment must be one of ['aligned', 'drifted'], found 'banana'",
+            invalid_alignment,
+        )
+        self.assertIn(
+            "finding_severity must be one of ['BLOCKER', 'MAJOR', 'MINOR', "
+            "'none'], found ''",
+            empty_controls,
+        )
+        self.assertIn(
+            "goal_alignment must be one of ['aligned', 'drifted'], found ''",
+            empty_controls,
+        )
+
+    def test_packet_requires_nonempty_handoff_free_text(self) -> None:
+        for field in ("scope_delta", "new_assumptions", "next_authorized_step"):
+            with self.subTest(field=field):
+                errors = validate_packet(
+                    packet().replace(f"{field}: none", f"{field}: "),
+                    require_complete=False,
+                )
+
+                self.assertIn(
+                    f"{field} must be non-empty (use 'none' when not applicable)",
+                    errors,
+                )
+
+    def test_completed_packet_allows_reported_blocker_finding(self) -> None:
+        errors = validate_packet(
+            packet(
+                status="completed",
+                user_complete="true",
+                phases_complete="true",
+                whole_complete="true",
+                gaps="none",
+                checked=True,
+                completed_at="2026-09-22T00:00:00Z",
+                remaining_risks="none",
+            ).replace("finding_severity: none", "finding_severity: BLOCKER"),
+            require_complete=True,
+        )
+
+        self.assertEqual(errors, [])
+
     def test_rejects_automation_as_execution_topology(self) -> None:
         errors = validate_packet(
             packet(topology="automation"), require_complete=False
@@ -449,6 +514,21 @@ class TaskPacketValidatorTests(unittest.TestCase):
 
     def test_accepts_dispatch_and_finding_severity_contract(self) -> None:
         self.assertEqual(validate_template(template()), [])
+
+    def test_template_accepts_handoff_placeholders_without_packet_controls(self) -> None:
+        placeholder_template = (
+            template()
+            .replace("finding_severity: none", "finding_severity: {{finding_severity}}")
+            .replace("goal_alignment: aligned", "goal_alignment: {{goal_alignment}}")
+            .replace("scope_delta: none", "scope_delta: {{scope_delta}}")
+            .replace("new_assumptions: none", "new_assumptions: {{new_assumptions}}")
+            .replace(
+                "next_authorized_step: none",
+                "next_authorized_step: {{next_authorized_step}}",
+            )
+        )
+
+        self.assertEqual(validate_template(placeholder_template), [])
 
     def test_template_handoff_block_must_be_final(self) -> None:
         errors = validate_template(template() + "\nUnexpected trailing text.\n")

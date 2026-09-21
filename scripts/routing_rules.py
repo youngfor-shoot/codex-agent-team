@@ -52,6 +52,12 @@ RECURRING_REQUEST_PATTERNS = (
     re.compile(r"(?:每天|每日|每周|每月|每季度|每年|定期|周期性)"),
     re.compile(r"(?:持续|长期)(?:监控|跟进|追踪)"),
 )
+PREVIEW_DIRECTIVE_RE = re.compile(r"\$agent-team[ \t]+preview:", re.IGNORECASE)
+PREVIEW_ACTION_FIELDS = (
+    "creates_agents",
+    "creates_user_owned_tasks",
+    "creates_automations",
+)
 
 
 def _require(expect: dict[str, Any], key: str) -> Any:
@@ -76,6 +82,10 @@ def authority_from_request(request: str) -> str:
 def request_is_recurring(request: str) -> bool:
     normalized = request.casefold()
     return any(pattern.search(normalized) for pattern in RECURRING_REQUEST_PATTERNS)
+
+
+def preview_from_request(request: str) -> bool:
+    return bool(PREVIEW_DIRECTIVE_RE.search(request))
 
 
 def validate_expect(expect: dict[str, Any], authority: str | None = None) -> list[str]:
@@ -179,11 +189,20 @@ def validate_scenario(scenario: dict[str, Any]) -> list[str]:
             f"request implies authority={derived_authority}, "
             f"found {scenario['authority']}"
         )
-    recurring = request_is_recurring(str(scenario["request"]))
-    wakeup = scenario["expect"].get("wakeup")
+    request = str(scenario["request"])
+    expect = scenario["expect"]
+    recurring = request_is_recurring(request)
+    wakeup = expect.get("wakeup")
     if recurring and wakeup == "none":
         errors.append("recurring request requires heartbeat or cron wakeup")
     if not recurring and wakeup in {"heartbeat", "cron"}:
         errors.append(f"{wakeup} wakeup requires a recurring request")
-    errors.extend(validate_expect(scenario["expect"], scenario["authority"]))
+    if preview_from_request(request):
+        for field in PREVIEW_ACTION_FIELDS:
+            if expect.get(field) is not False:
+                errors.append(f"preview requires {field}=false")
+        side_effects = expect.get("side_effects")
+        if not isinstance(side_effects, list) or side_effects:
+            errors.append("preview requires side_effects=[]")
+    errors.extend(validate_expect(expect, scenario["authority"]))
     return errors

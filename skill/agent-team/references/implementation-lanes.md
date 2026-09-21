@@ -15,14 +15,11 @@ to bypass that boundary. It never promotes itself to `ROOT`. It executes the
 controller-selected assignment and returns evidence. An exact root grant
 permits only named-scope subdelegation; the original controller remains `ROOT`.
 
-Once `ROOT` dispatches an executor, every independently bounded implementation
-change belongs to executor ownership. Root may concurrently perform analysis,
-requirements or test-contract review, validation planning or execution, and
-control artifacts. It must not implement another independently bounded feature
-or call it integration. After results return, root edits are limited to
-necessary assembly or conflict resolution supported by exact evidence; state a
-genuine runtime, authority, or dependency exception before other local
-implementation.
+Dispatch assigns only the named scope to that executor. ROOT may retain a
+disjoint implementation scope and perform analysis, validation, and acceptance
+alongside it. Keep one writer per file or shared external state. A small or
+sequential task with no useful independent outcome can remain entirely local;
+no lane selection or invented blocker is needed for that direct route.
 
 ## Preflight and authority
 

@@ -59,7 +59,23 @@ the previous signal handlers, and propagates interruption to the caller. The
 focused tests and complete evidence-loop suite passed on Windows, as did Ruff,
 strict mypy, and whitespace checks. A real subprocess signal regression checks
 that the following check is never reached; it is skipped on Windows and remains
-a required Linux/macOS CI gate. Stages 3-4 are pending.
+a required Linux/macOS CI gate.
+
+### Stage 3: contracts and routing (passed locally)
+
+Malformed severity/alignment values and empty required handoff text reproduced
+four failures before repair. Packet validation now enforces the documented
+values while templates retain placeholders. Preview fixtures require explicit
+false action flags and an empty side-effect list, covering absent values, wrong
+types, mutation, a weekly planned wakeup, and a preview-button near neighbor.
+All 37 packet and 19 routing tests passed, plus two entrypoint/link checks,
+Ruff and strict typing. A bounded independent reading probe confirmed direct
+execution for one typo, read-only weekly preview, and disjoint temporary work.
+It found one optional-packet wording contradiction, which was corrected.
+This is instruction-conformance evidence, not a model benchmark.
+
+Stage 4 remains pending. A generated Ruff cache was moved outside the checkout
+after verification accounting detected it; subsequent lint uses no cache.
 
 ## Delegation evidence
 

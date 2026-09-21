@@ -182,4 +182,23 @@ SCENARIOS = [
         },
         "rationale": "Documented Chinese recurring wording requires an explicit bounded wakeup.",
     },
+    {
+        "id": "012-explicit-preview-is-read-only",
+        "request": "Use $agent-team preview: plan weekly release monitoring.",
+        "authority": "explicit-invocation",
+        "expect": {
+            "topology": "temporary",
+            "wakeup": "heartbeat",
+            "wakeup_stop_condition": "preview ends without execution",
+            "convergence": "phase-gated",
+            "independent_review_gate": "not-required",
+            "independent_review_status": "not-applicable",
+            "human_gates": ["none"],
+            "creates_agents": False,
+            "creates_user_owned_tasks": False,
+            "creates_automations": False,
+            "side_effects": [],
+        },
+        "rationale": "The preview may plan persistent topology and a future wakeup, but declares no action or side effect.",
+    },
 ]

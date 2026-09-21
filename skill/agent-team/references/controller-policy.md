@@ -1,7 +1,7 @@
 # Controller Policy
 
-Read this policy before ROOT selects a topology, dispatches work, or performs
-an implementation write. It contains the detailed policy extracted from the
+Read this policy before ROOT selects collaboration or dispatches work.
+Simple direct execution needs no collaboration ceremony. It contains policy from the
 Agent Team entrypoint; `SKILL.md` remains the compact routing surface.
 
 ## Establish authority
@@ -38,11 +38,19 @@ monitoring mode and user-visible status. Before the first authorized delegated
 call, emit the same preview in commentary. A configured backend is not one
 that ran; report substitutions only after evidence returns.
 
+A preview may propose a persistent topology or future wakeup without creating
+anything. Its actual action fields are `creates_agents: false`,
+`creates_user_owned_tasks: false`, `creates_automations: false`, and
+`side_effects: []`. Execution requires a subsequent authorized request; a
+preview request itself never authorizes the proposed actions.
+
 ## Select five decisions independently
 
 ### 1. Execution topology
 
 - `single`: one bounded, mainly sequential outcome with direct verification.
+  ROOT implements and verifies directly when delegation offers no independent
+  benefit; no runtime blocker or invented workstream is needed.
 - `temporary`: independently bounded executor outcomes can run beside useful
   controller analysis, validation, or acceptance; no role state must survive a
   future user checkpoint. It never creates user-owned tasks.
