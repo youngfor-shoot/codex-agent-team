@@ -11,6 +11,7 @@ feeds the same scenarios to a Codex session and diffs the emitted preview.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 PERSISTENCE_GATES = {
@@ -42,12 +43,39 @@ ALLOWED_HUMAN_GATES = {
     "permission-expansion",
     "none",
 }
+RECURRING_REQUEST_PATTERNS = (
+    re.compile(r"\b(?:daily|weekly|monthly|recurring)\b"),
+    re.compile(r"\bevery\s+(?:day|week|month|quarter|year)\b"),
+    re.compile(r"\bkeep\s+monitoring\b"),
+    re.compile(r"\bmonitor(?:ing)?\s+(?:later|continuously)\b"),
+    re.compile(r"\brecurring\s+follow[- ]?up\b"),
+    re.compile(r"(?:每天|每日|每周|每月|每季度|每年|定期|周期性)"),
+    re.compile(r"(?:持续|长期)(?:监控|跟进|追踪)"),
+)
 
 
 def _require(expect: dict[str, Any], key: str) -> Any:
     if key not in expect:
         raise AssertionError(f"scenario expect is missing required field: {key}")
     return expect[key]
+
+
+def authority_from_request(request: str) -> str:
+    normalized = request.casefold()
+    if "auto-lifetime" in normalized:
+        return "auto-lifetime"
+    if "$agent-team" in normalized or re.search(
+        r"\bpersistent[- ]team\b", normalized
+    ):
+        return "explicit-invocation"
+    if re.search(r"\bmulti[- ]agent\b", normalized):
+        return "plain-multi-agent"
+    return "implicit"
+
+
+def request_is_recurring(request: str) -> bool:
+    normalized = request.casefold()
+    return any(pattern.search(normalized) for pattern in RECURRING_REQUEST_PATTERNS)
 
 
 def validate_expect(expect: dict[str, Any], authority: str | None = None) -> list[str]:
@@ -145,5 +173,17 @@ def validate_scenario(scenario: dict[str, Any]) -> list[str]:
         "plain-multi-agent",
     }:
         errors.append(f"unknown authority: {scenario['authority']}")
+    derived_authority = authority_from_request(str(scenario["request"]))
+    if scenario["authority"] != derived_authority:
+        errors.append(
+            f"request implies authority={derived_authority}, "
+            f"found {scenario['authority']}"
+        )
+    recurring = request_is_recurring(str(scenario["request"]))
+    wakeup = scenario["expect"].get("wakeup")
+    if recurring and wakeup == "none":
+        errors.append("recurring request requires heartbeat or cron wakeup")
+    if not recurring and wakeup in {"heartbeat", "cron"}:
+        errors.append(f"{wakeup} wakeup requires a recurring request")
     errors.extend(validate_expect(scenario["expect"], scenario["authority"]))
     return errors

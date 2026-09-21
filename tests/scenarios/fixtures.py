@@ -25,11 +25,10 @@ SCENARIOS = [
     {
         "id": "002-two-independent-outcomes",
         "request": "Add import validation to the auth migration and verify it.",
-        "authority": "explicit-invocation",
+        "authority": "implicit",
         "expect": {
             "topology": "temporary",
-            "wakeup": "heartbeat",
-            "wakeup_stop_condition": "task completes or blocks on user input",
+            "wakeup": "none",
             "convergence": "phase-gated",
             "independent_review_gate": "required",
             "review_trigger": "data-migration-overwrite-loss",
@@ -69,16 +68,17 @@ SCENARIOS = [
     {
         "id": "004-persistent-missing-gates",
         "request": "Use $agent-team with a persistent team to keep monitoring this project.",
-        "authority": "plain-multi-agent",
+        "authority": "explicit-invocation",
         "expect": {
             "topology": "temporary",
-            "wakeup": "none",
+            "wakeup": "heartbeat",
+            "wakeup_stop_condition": "monitoring ends or blocks on user input",
             "convergence": "single-pass",
             "independent_review_gate": "not-required",
             "independent_review_status": "not-applicable",
             "human_gates": ["none"],
         },
-        "rationale": "No explicit lifetime wording; persistence gates fail, so downgrade to temporary.",
+        "rationale": "The persistent request lacks complete reuse and lifecycle evidence, so downgrade to temporary while retaining recurring follow-up.",
     },
     {
         "id": "005-evidence-loop-requires-review",
@@ -98,11 +98,10 @@ SCENARIOS = [
     {
         "id": "006-security-trust-boundary",
         "request": "Migrate the auth service to a new token format and make sure nothing breaks.",
-        "authority": "explicit-invocation",
+        "authority": "implicit",
         "expect": {
             "topology": "temporary",
-            "wakeup": "heartbeat",
-            "wakeup_stop_condition": "migration verified or blocked",
+            "wakeup": "none",
             "convergence": "evidence-loop",
             "independent_review_gate": "required",
             "review_trigger": "security-authorization-trust-boundary",
@@ -114,11 +113,10 @@ SCENARIOS = [
     {
         "id": "007-cross-system-contract",
         "request": "Sync the order API with the warehouse service and verify the contract.",
-        "authority": "explicit-invocation",
+        "authority": "implicit",
         "expect": {
             "topology": "temporary",
-            "wakeup": "heartbeat",
-            "wakeup_stop_condition": "sync verified or blocked",
+            "wakeup": "none",
             "convergence": "phase-gated",
             "independent_review_gate": "required",
             "review_trigger": "api-sync-persistence-contract",
@@ -130,7 +128,7 @@ SCENARIOS = [
     {
         "id": "008-content-analysis-readonly",
         "request": "Use $agent-team to analyze this research paper and summarize the gaps.",
-        "authority": "implicit",
+        "authority": "explicit-invocation",
         "expect": {
             "topology": "single",
             "wakeup": "none",
@@ -147,8 +145,7 @@ SCENARIOS = [
         "authority": "explicit-invocation",
         "expect": {
             "topology": "temporary",
-            "wakeup": "heartbeat",
-            "wakeup_stop_condition": "reorganization verified or blocked",
+            "wakeup": "none",
             "convergence": "phase-gated",
             "independent_review_gate": "not-required",
             "independent_review_status": "not-applicable",
@@ -159,7 +156,7 @@ SCENARIOS = [
     {
         "id": "010-no-invented-work",
         "request": "Use $agent-team to complete: write a blog post AND research competitors AND refactor the build.",
-        "authority": "plain-multi-agent",
+        "authority": "explicit-invocation",
         "expect": {
             "topology": "single",
             "wakeup": "none",
@@ -169,5 +166,20 @@ SCENARIOS = [
             "human_gates": ["publication"],
         },
         "rationale": "Never invent work to involve every backend; objective is vague, so ask before delegating.",
+    },
+    {
+        "id": "011-chinese-recurring-monitoring",
+        "request": "使用 $agent-team 每天持续监控这个项目。",
+        "authority": "explicit-invocation",
+        "expect": {
+            "topology": "temporary",
+            "wakeup": "heartbeat",
+            "wakeup_stop_condition": "用户输入、无进展或项目完成",
+            "convergence": "single-pass",
+            "independent_review_gate": "not-required",
+            "independent_review_status": "not-applicable",
+            "human_gates": ["none"],
+        },
+        "rationale": "Documented Chinese recurring wording requires an explicit bounded wakeup.",
     },
 ]

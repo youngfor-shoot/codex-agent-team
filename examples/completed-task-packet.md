@@ -4,7 +4,7 @@
 - `task_id`: `auth-migration-import-validation`
 - `status`: `completed`
 - `execution_topology`: `temporary`
-- `wakeup_mode`: `heartbeat`
+- `wakeup_mode`: `none`
 - `convergence_strategy`: `phase-gated`
 - `independent_review_gate`: `required`
 - `independent_review_status`: `passed`
@@ -33,7 +33,7 @@ Accepted scope delta: none.
 Topology: `temporary` — one bounded outcome, no role state that must survive
 future checkpoints.
 
-Wakeup: `heartbeat` — the controller reports back to this task on each phase.
+Wakeup: `none` — this was a one-shot task with no recurring follow-up request.
 
 Convergence: `phase-gated` — implementation completes first, then a visual
 review of the error messages before final verification.
@@ -68,3 +68,11 @@ error messages, verified by the existing test suite.
 - `status`: `completed`
 - `completed_at`: `2026-08-11T18:00:00Z`
 - `remaining_risks`: `none`
+
+<task_handoff>
+finding_severity: none
+goal_alignment: aligned
+scope_delta: none
+new_assumptions: none
+next_authorized_step: none
+</task_handoff>

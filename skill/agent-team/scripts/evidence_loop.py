@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-__version__ = "0.3.0"
+__version__ = "0.5.5"
 SCHEMA_VERSION = 1
 MAX_CAPTURE_CHARS = 4_000
 MAX_HISTORY_EVENTS = 40
@@ -255,7 +255,6 @@ def validate_state_shape(state: dict[str, Any]) -> None:
         "current_worker_run_id",
         "same_failure_streak",
         "history",
-        "active_seconds",
     }
     missing = required.difference(state)
     if missing:
@@ -428,6 +427,13 @@ def stop_for_budget(
     return None
 
 
+def active_budget_seconds(contract: dict[str, Any]) -> float:
+    limits = contract["limits"]
+    return float(
+        limits.get("active_budget_seconds", limits["max_minutes"] * 60)
+    )
+
+
 def path_fingerprint(path: Path) -> str:
     path = path.resolve()
     digest = hashlib.sha256()
@@ -484,7 +490,12 @@ def source_fingerprint(worktree: Path, base_commit: str) -> str:
         digest.update(raw_name)
         try:
             relative = Path(os.fsdecode(raw_name))
-            candidate = (worktree / relative).resolve()
+            source_path = worktree / relative
+            if source_path.is_symlink():
+                digest.update(b"[SYMLINK]")
+                digest.update(os.fsencode(os.readlink(source_path)))
+                continue
+            candidate = source_path.resolve()
             if not is_within(candidate, worktree) or not candidate.is_file():
                 continue
             if is_sensitive_file(candidate):
@@ -532,7 +543,6 @@ def sanitized_environment(passthrough: Sequence[str] = ()) -> dict[str, str]:
         "LC_NUMERIC",
         "LC_TIME",
         "LOGNAME",
-        "PWD",
         "SHELL",
         "TMPDIR",
         "USER",
@@ -541,12 +551,21 @@ def sanitized_environment(passthrough: Sequence[str] = ()) -> dict[str, str]:
         "XDG_DATA_HOME",
         "XDG_RUNTIME_DIR",
     }
-    allowed.update(name.upper() for name in passthrough)
-    return {key: value for key, value in os.environ.items() if key.upper() in allowed}
+    if os.name == "nt":
+        allowed.update(name.upper() for name in passthrough)
+        return {
+            key: value
+            for key, value in os.environ.items()
+            if key.upper() in allowed
+        }
+    allowed.update(passthrough)
+    return {key: value for key, value in os.environ.items() if key in allowed}
 
 
 def validate_env_passthrough(names: Sequence[str]) -> list[str]:
-    normalized = sorted({name.upper() for name in names})
+    normalized = sorted(
+        {name.upper() for name in names} if os.name == "nt" else set(names)
+    )
     for name in normalized:
         if not ENV_NAME_RE.fullmatch(name):
             raise LoopError(f"Invalid environment variable name for passthrough: {name}")
@@ -702,7 +721,7 @@ def windows_wrapped_command(command: list[str]) -> list[str]:
 def run_check(
     command: list[str],
     worktree: Path,
-    timeout_seconds: int,
+    timeout_seconds: float,
     passthrough: Sequence[str] = (),
     max_chars: int = MAX_CAPTURE_CHARS,
 ) -> dict[str, Any]:
@@ -891,20 +910,12 @@ def init_run(args: argparse.Namespace) -> int:
         "history": [],
     }
     append_event(state, "initialized")
-    lock_path = state_path.with_name(f"{state_path.name}.lock")
-    try:
-        with run_lock(state_path):
-            if state_path.exists() or contract_path.exists():
-                raise LoopError(f"Run control files already exist for: {state_path}")
-            write_json_atomic(contract_path, contract)
-            make_readonly(contract_path)
-            write_state(state_path, state)
-    except BaseException:
-        # Failed init leaves an orphan lock; remove it so the next attempt
-        # can lock cleanly. Only safe because init created the lock anew.
-        with suppress(OSError):
-            lock_path.unlink(missing_ok=True)
-        raise
+    with run_lock(state_path):
+        if state_path.exists() or contract_path.exists():
+            raise LoopError(f"Run control files already exist for: {state_path}")
+        write_json_atomic(contract_path, contract)
+        make_readonly(contract_path)
+        write_state(state_path, state)
     print_summary(state, contract)
     return 0
 
@@ -980,21 +991,36 @@ def verify_iteration(args: argparse.Namespace) -> int:
 
         results: list[dict[str, Any]] = []
         passthrough = contract.get("env_passthrough", [])
-        active_budget = contract["limits"]["active_budget_seconds"]
+        active_budget = active_budget_seconds(contract)
+        active_seconds = float(state.get("active_seconds", 0.0))
         for command in contract["checks"]:
-            remaining = int(
-                (parse_time(contract["deadline"]) - utc_now()).total_seconds()
-            )
-            if remaining <= 0:
+            remaining_wall = (
+                parse_time(contract["deadline"]) - utc_now()
+            ).total_seconds()
+            remaining_active = active_budget - active_seconds
+            if remaining_active <= 0:
+                state["status"] = "stopped_time"
+                state["stop_reason"] = "active_budget_exceeded"
+                append_event(
+                    state,
+                    "stopped",
+                    reason="active_budget_exceeded",
+                    active_seconds=active_seconds,
+                )
+                write_state(state_path, state)
+                print_summary(state, contract)
+                return 3
+            if remaining_wall <= 0:
                 state["status"] = "stopped_time"
                 state["stop_reason"] = "max_elapsed_time"
                 append_event(state, "stopped", reason="max_elapsed_time")
                 write_state(state_path, state)
                 print_summary(state, contract)
                 return 3
-            timeout_seconds = max(
-                1,
-                min(contract["limits"]["command_timeout_seconds"], remaining),
+            timeout_seconds = min(
+                float(contract["limits"]["command_timeout_seconds"]),
+                remaining_wall,
+                remaining_active,
             )
             result = run_check(
                 command,
@@ -1004,15 +1030,16 @@ def verify_iteration(args: argparse.Namespace) -> int:
                 contract["limits"].get("max_capture_chars", MAX_CAPTURE_CHARS),
             )
             results.append(result)
-            state["active_seconds"] += result.get("duration_seconds", 0.0)
-            if state["active_seconds"] > active_budget:
+            active_seconds += float(result.get("duration_seconds", 0.0))
+            state["active_seconds"] = active_seconds
+            if active_seconds > active_budget:
                 state["status"] = "stopped_time"
                 state["stop_reason"] = "active_budget_exceeded"
                 append_event(
                     state,
                     "stopped",
                     reason="active_budget_exceeded",
-                    active_seconds=state["active_seconds"],
+                    active_seconds=active_seconds,
                 )
                 write_state(state_path, state)
                 print_summary(state, contract)
@@ -1159,16 +1186,18 @@ def record_review(args: argparse.Namespace) -> int:
             write_state(state_path, state)
             print_summary(state, contract)
             return 2
-        if utc_now() >= parse_time(contract["deadline"]):
-            state["status"] = "stopped_time"
-            state["stop_reason"] = "max_elapsed_time"
-            append_event(state, "stopped", reason="max_elapsed_time")
-            write_state(state_path, state)
-            print_summary(state, contract)
-            return 3
         # Review grace window: once verification passed, the run may complete
         # review even if the wall-clock deadline lapsed, within a bounded grace.
         passed_at = state.get("verification_passed_at")
+        if not passed_at:
+            passed_at = next(
+                (
+                    event.get("at")
+                    for event in reversed(state.get("history", []))
+                    if event.get("event") == "verification_passed"
+                ),
+                None,
+            )
         grace_minutes = contract["limits"].get("review_grace_minutes", 15)
         if passed_at and utc_now() > parse_time(passed_at) + timedelta(
             minutes=grace_minutes
@@ -1176,6 +1205,13 @@ def record_review(args: argparse.Namespace) -> int:
             state["status"] = "stopped_time"
             state["stop_reason"] = "review_grace_expired"
             append_event(state, "stopped", reason="review_grace_expired")
+            write_state(state_path, state)
+            print_summary(state, contract)
+            return 3
+        if not passed_at and utc_now() >= parse_time(contract["deadline"]):
+            state["status"] = "stopped_time"
+            state["stop_reason"] = "max_elapsed_time"
+            append_event(state, "stopped", reason="max_elapsed_time")
             write_state(state_path, state)
             print_summary(state, contract)
             return 3

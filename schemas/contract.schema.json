@@ -17,7 +17,6 @@
     "limits",
     "require_review",
     "protected_paths",
-    "env_passthrough",
     "created_at",
     "deadline"
   ],
@@ -51,10 +50,7 @@
         "max_iterations",
         "max_minutes",
         "command_timeout_seconds",
-        "same_failure_limit",
-        "active_budget_seconds",
-        "review_grace_minutes",
-        "max_capture_chars"
+        "same_failure_limit"
       ],
       "properties": {
         "max_iterations": { "type": "integer", "minimum": 1 },

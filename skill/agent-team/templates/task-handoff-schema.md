@@ -6,8 +6,10 @@ and no text follows `</task_handoff>`.
 
 ## Rules
 
-- Exactly one `<task_handoff>` block per handoff.
-- Every required field appears as its own field line inside the block.
+- Exactly one opening `<task_handoff>` tag and one closing `</task_handoff>`
+  tag per handoff; nested or stray tags are invalid.
+- Every required field appears exactly once as its own field line inside the
+  block; duplicate field names are invalid.
 - Field names use lowercase letters and underscores.
 - Empty values are `none`.
 - The block lives at the end of the handoff; nothing follows the closing tag.

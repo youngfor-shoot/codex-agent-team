@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from collections import Counter
 from pathlib import Path
 
 FIELD_RE = re.compile(r"^- `([^`]+)`: `([^`]*)`\s*$", re.MULTILINE)
@@ -13,8 +14,11 @@ HANDOFF_BLOCK_RE = re.compile(
     r"^<task_handoff>[ \t]*\r?\n(.*?)^</task_handoff>[ \t]*$",
     re.MULTILINE | re.DOTALL,
 )
+HANDOFF_OPEN_RE = re.compile(r"^<task_handoff>[ \t]*$", re.MULTILINE)
+HANDOFF_CLOSE_RE = re.compile(r"^</task_handoff>[ \t]*$", re.MULTILINE)
 HANDOFF_FIELD_RE = re.compile(r"^([a-z_]+):[ \t]*.*$")
 REQUIRED_FIELDS = {
+    "contract_version",
     "task_id",
     "status",
     "execution_topology",
@@ -55,7 +59,7 @@ ALLOWED_CONVERGENCE = {"single-pass", "evidence-loop", "phase-gated"}
 ALLOWED_REVIEW_GATES = {"required", "not-required"}
 ALLOWED_REVIEW_STATUSES = {"pending", "passed", "not-applicable"}
 CONTRACT_VERSION = 1
-__version__ = "0.3.0"
+__version__ = "0.5.5"
 
 
 def exact_lines(text: str) -> set[str]:
@@ -95,41 +99,90 @@ def unchecked_items(text: str, heading: str) -> list[str]:
     ]
 
 
+def metadata_fields(text: str, subject: str, errors: list[str]) -> dict[str, str]:
+    preamble = re.split(r"^## ", text, maxsplit=1, flags=re.MULTILINE)[0]
+    pairs = FIELD_RE.findall(preamble)
+    for name, count in sorted(Counter(name for name, _ in pairs).items()):
+        if count > 1:
+            errors.append(f"{subject} duplicate metadata field: {name}")
+    return dict(pairs)
+
+
+def final_state_fields(text: str, subject: str, errors: list[str]) -> dict[str, str]:
+    pairs = FIELD_RE.findall(section(text, "## Final State"))
+    for name, count in sorted(Counter(name for name, _ in pairs).items()):
+        if count > 1:
+            errors.append(f"{subject} duplicate final state field: {name}")
+    return dict(pairs)
+
+
+def validate_handoff(text: str, subject: str) -> list[str]:
+    errors: list[str] = []
+    opening_count = len(HANDOFF_OPEN_RE.findall(text))
+    closing_count = len(HANDOFF_CLOSE_RE.findall(text))
+    if opening_count != 1:
+        errors.append(
+            f"{subject} requires exactly one <task_handoff> tag, "
+            f"found {opening_count}"
+        )
+    if closing_count != 1:
+        errors.append(
+            f"{subject} requires exactly one </task_handoff> tag, "
+            f"found {closing_count}"
+        )
+    handoff_blocks = HANDOFF_BLOCK_RE.findall(text)
+    if len(handoff_blocks) != 1:
+        errors.append(
+            f"{subject} requires exactly one <task_handoff> block, "
+            f"found {len(handoff_blocks)}"
+        )
+    handoff_field_names = [
+        match.group(1)
+        for block in handoff_blocks
+        for line in block.splitlines()
+        if (match := HANDOFF_FIELD_RE.fullmatch(line.rstrip()))
+    ]
+    handoff_fields = {f"{name}:" for name in handoff_field_names}
+    for name, count in sorted(Counter(handoff_field_names).items()):
+        if count > 1:
+            errors.append(f"{subject} duplicate handoff field: {name}")
+    for handoff_field in sorted(REQUIRED_HANDOFF_FIELDS):
+        if handoff_field not in handoff_fields:
+            errors.append(f"{subject} missing handoff field: {handoff_field}")
+    if handoff_blocks and not text.rstrip().endswith("</task_handoff>"):
+        errors.append(f"{subject} handoff block must be final content")
+    return errors
+
+
 def validate_template(text: str) -> list[str]:
     errors: list[str] = []
+    fields = metadata_fields(text, "template", errors)
     lines = exact_lines(text)
+    line_counts = Counter(line.rstrip() for line in text.splitlines())
     for field in sorted(REQUIRED_FIELDS):
-        if f"`{field}`" not in text:
+        if field not in fields:
             errors.append(f"template missing field: {field}")
     for heading in sorted(REQUIRED_HEADINGS):
         if heading not in lines:
             errors.append(f"template missing heading: {heading}")
+        elif line_counts[heading] > 1:
+            errors.append(f"template duplicate heading: {heading}")
     for heading in sorted(REQUIRED_DISPATCH_HEADINGS):
         if heading not in lines:
             errors.append(f"template missing dispatch heading: {heading}")
+        elif line_counts[heading] > 1:
+            errors.append(f"template duplicate dispatch heading: {heading}")
 
-    handoff_blocks = HANDOFF_BLOCK_RE.findall(text)
-    if len(handoff_blocks) != 1:
-        errors.append(
-            "template requires exactly one <task_handoff> block, "
-            f"found {len(handoff_blocks)}"
-        )
-    handoff_fields = {
-        f"{match.group(1)}:"
-        for block in handoff_blocks
-        for line in block.splitlines()
-        if (match := HANDOFF_FIELD_RE.fullmatch(line.rstrip()))
-    }
-    for handoff_field in sorted(REQUIRED_HANDOFF_FIELDS):
-        if handoff_field not in handoff_fields:
-            errors.append(f"template missing handoff field: {handoff_field}")
+    errors.extend(validate_handoff(text, "template"))
     return errors
 
 
 def validate_packet(text: str, require_complete: bool) -> list[str]:
-    errors: list[str] = []
-    fields = dict(FIELD_RE.findall(text))
+    errors = validate_handoff(text, "packet")
+    fields = metadata_fields(text, "packet", errors)
+    final_fields = final_state_fields(text, "packet", errors)
     lines = exact_lines(text)
+    line_counts = Counter(line.rstrip() for line in text.splitlines())
 
     for field in sorted(REQUIRED_FIELDS):
         if field not in fields:
@@ -137,6 +190,15 @@ def validate_packet(text: str, require_complete: bool) -> list[str]:
     for heading in sorted(REQUIRED_HEADINGS):
         if heading not in lines:
             errors.append(f"missing heading: {heading}")
+        elif line_counts[heading] > 1:
+            errors.append(f"packet duplicate heading: {heading}")
+
+    final_status = final_fields.get("status")
+    if final_status is not None and final_status != fields.get("status"):
+        errors.append(
+            "final state status must match metadata status, "
+            f"found {final_status!r}"
+        )
 
     contract_version = fields.get("contract_version")
     if contract_version is not None and contract_version != str(CONTRACT_VERSION):
@@ -264,10 +326,10 @@ def validate_packet(text: str, require_complete: bool) -> list[str]:
             for item in unchecked_items(text, heading):
                 errors.append(f"unchecked item in {heading}: {item}")
 
-        completed_at = fields.get("completed_at", "")
+        completed_at = final_fields.get("completed_at", "")
         if not completed_at or completed_at.lower() == "pending":
             errors.append("completed packet requires a final completed_at value")
-        remaining_risks = fields.get("remaining_risks", "")
+        remaining_risks = final_fields.get("remaining_risks", "")
         if remaining_risks.strip().lower() != "none":
             errors.append("completed packet requires remaining_risks=none")
 
