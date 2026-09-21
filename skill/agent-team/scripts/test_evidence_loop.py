@@ -607,6 +607,36 @@ class EvidenceLoopTests(unittest.TestCase):
         ):
             evidence_loop.path_fingerprint(self.case_dir / "missing")
 
+    def test_path_fingerprint_rejects_directory_link_escape(self) -> None:
+        asset_directory = self.case_dir / "assets-link-escape"
+        outside = self.case_dir / "outside.txt"
+        asset_directory.mkdir()
+        outside.write_text("outside\n", encoding="utf-8")
+        link = asset_directory / "escaped.txt"
+        try:
+            os.symlink(outside, link)
+        except OSError as error:
+            self.skipTest(f"symlinks unavailable: {error}")
+        try:
+            with self.assertRaisesRegex(
+                evidence_loop.LoopError, "escapes through a link"
+            ):
+                evidence_loop.path_fingerprint(asset_directory)
+        finally:
+            link.unlink(missing_ok=True)
+
+    def test_validate_frozen_assets_rejects_missing_file(self) -> None:
+        contract = {
+            "frozen_assets": {
+                str(self.case_dir / "missing-acceptance.py"): "a" * 64
+            }
+        }
+
+        with self.assertRaisesRegex(
+            evidence_loop.LoopError, "Frozen acceptance asset changed"
+        ):
+            evidence_loop.validate_frozen_assets(contract)
+
     def test_source_fingerprint_accounts_for_untracked_files(self) -> None:
         baseline = evidence_loop.source_fingerprint(
             self.worktree, evidence_loop.git_identity(self.worktree)["base_commit"]
@@ -662,6 +692,122 @@ class EvidenceLoopTests(unittest.TestCase):
 
         self.assertNotEqual(result["returncode"], 0)
         self.assertFalse(result["timed_out"])
+
+    def test_run_check_returns_launch_error_without_raising(self) -> None:
+        with mock.patch.object(
+            evidence_loop.subprocess,
+            "Popen",
+            side_effect=OSError("launch denied"),
+        ):
+            result = evidence_loop.run_check(
+                [sys.executable, "acceptance.py"],
+                self.worktree,
+                timeout_seconds=1,
+            )
+
+        self.assertIsNone(result["returncode"])
+        self.assertFalse(result["timed_out"])
+        self.assertIn("launch denied", result["stderr"])
+
+    def test_terminate_process_tree_kills_then_waits_on_posix(self) -> None:
+        process = mock.Mock()
+        process.poll.return_value = None
+        process.pid = 123
+        process.wait.side_effect = [
+            subprocess.TimeoutExpired(["check"], 15),
+            None,
+        ]
+        with (
+            mock.patch.object(evidence_loop.os, "name", "posix"),
+            mock.patch.object(evidence_loop.os, "killpg", create=True) as killpg,
+            mock.patch("signal.SIGKILL", 9, create=True),
+        ):
+            terminated = evidence_loop.terminate_process_tree(process, None)
+
+        self.assertTrue(terminated)
+        killpg.assert_called_once()
+        process.kill.assert_called_once()
+
+    def test_terminate_process_tree_reports_failed_force_kill(self) -> None:
+        process = mock.Mock()
+        process.poll.return_value = 0
+        process.wait.side_effect = [
+            subprocess.TimeoutExpired(["check"], 15),
+            OSError("kill denied"),
+        ]
+
+        self.assertFalse(evidence_loop.terminate_process_tree(process, None))
+        process.kill.assert_called_once()
+
+    def test_posix_signal_cleanup_kills_child_group_and_restores_handlers(self) -> None:
+        process = mock.Mock()
+        process.pid = 456
+        with (
+            mock.patch.object(evidence_loop.os, "name", "posix"),
+            mock.patch.object(evidence_loop.os, "killpg", create=True) as killpg,
+            mock.patch("signal.SIGKILL", 9, create=True),
+            mock.patch(
+                "signal.signal",
+                side_effect=["old-int", "old-term", None, None],
+            ) as signal_fn,
+            evidence_loop.posix_signal_cleanup(process),
+        ):
+            handler = signal_fn.call_args_list[0].args[1]
+            handler(None, None)
+
+        killpg.assert_called_once()
+        self.assertEqual(signal_fn.call_count, 4)
+        self.assertEqual(signal_fn.call_args_list[2].args[1], "old-int")
+        self.assertEqual(signal_fn.call_args_list[3].args[1], "old-term")
+
+    def test_windows_wrapper_preserves_check_command(self) -> None:
+        command = [sys.executable, "acceptance.py", "--strict"]
+
+        wrapped = evidence_loop.windows_wrapped_command(command)
+
+        self.assertEqual(wrapped[:3], [
+            sys.executable,
+            str(Path(evidence_loop.__file__).resolve()),
+            "--internal-exec-check",
+        ])
+        self.assertEqual(json.loads(wrapped[3]), command)
+
+    def test_internal_exec_check_rejects_interactive_stdin(self) -> None:
+        stdin = mock.Mock()
+        stdin.isatty.return_value = True
+
+        with mock.patch.object(evidence_loop.sys, "stdin", stdin):
+            result = evidence_loop.exec_check_main(json.dumps(["python"]))
+
+        self.assertEqual(result, 127)
+
+    def test_internal_exec_check_requires_sentinel_then_runs_command(self) -> None:
+        stdin = mock.Mock()
+        stdin.isatty.return_value = False
+        stdin.buffer.read.return_value = b""
+        with mock.patch.object(evidence_loop.sys, "stdin", stdin):
+            self.assertEqual(
+                evidence_loop.exec_check_main(
+                    json.dumps([sys.executable, "--version"])
+                ),
+                125,
+            )
+
+        stdin.buffer.read.return_value = b"1"
+        completed = mock.Mock(returncode=7)
+        with (
+            mock.patch.object(evidence_loop.sys, "stdin", stdin),
+            mock.patch.object(
+                evidence_loop.subprocess, "run", return_value=completed
+            ) as run,
+        ):
+            result = evidence_loop.exec_check_main(
+                json.dumps([sys.executable, "--version"])
+            )
+
+        self.assertEqual(result, 7)
+        self.assertEqual(run.call_args.args[0], [sys.executable, "--version"])
+        self.assertFalse(run.call_args.kwargs["shell"])
 
     def test_parse_command_rejects_invalid_and_inline_evaluation(self) -> None:
         cases = (

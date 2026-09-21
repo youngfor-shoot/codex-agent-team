@@ -371,7 +371,7 @@ class PythonSyncTests(unittest.TestCase):
             self.assertEqual(result, 1)
             self.assertEqual(destination_attempts, 2)
             self.assertEqual(len(recovery_roots), 1)
-            self.assertIn(str(recovery_roots[0]), stderr.getvalue())
+            self.assertIn(str(recovery_roots[0].resolve()), stderr.getvalue())
             self.assertEqual(
                 (recovery_roots[0] / "rollback" / "SKILL.md").read_text(
                     encoding="utf-8"
