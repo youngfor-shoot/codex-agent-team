@@ -30,10 +30,30 @@ function Test-PathWithin {
         [Parameter(Mandatory = $true)][string]$Parent
     )
 
-    $candidatePath = (Get-AbsolutePath $Candidate).TrimEnd("\")
-    $parentPath = (Get-AbsolutePath $Parent).TrimEnd("\")
-    return $candidatePath.Equals($parentPath, [StringComparison]::OrdinalIgnoreCase) -or
-        $candidatePath.StartsWith($parentPath + "\", [StringComparison]::OrdinalIgnoreCase)
+    $trimCharacters = [char[]]@(
+        [IO.Path]::DirectorySeparatorChar,
+        [IO.Path]::AltDirectorySeparatorChar
+    )
+    $candidatePath = Get-AbsolutePath $Candidate
+    $parentPath = Get-AbsolutePath $Parent
+    foreach ($pathName in @("candidatePath", "parentPath")) {
+        $pathValue = Get-Variable -Name $pathName -ValueOnly
+        $root = [IO.Path]::GetPathRoot($pathValue)
+        if ($pathValue.Length -gt $root.Length) {
+            Set-Variable -Name $pathName -Value $pathValue.TrimEnd($trimCharacters)
+        }
+    }
+    $comparison = if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+        [StringComparison]::OrdinalIgnoreCase
+    }
+    else {
+        [StringComparison]::Ordinal
+    }
+    return $candidatePath.Equals($parentPath, $comparison) -or
+        $candidatePath.StartsWith(
+            $parentPath.TrimEnd($trimCharacters) + [IO.Path]::DirectorySeparatorChar,
+            $comparison
+        )
 }
 
 function Get-NormalizedHash {
@@ -113,9 +133,17 @@ function Get-ManagedFiles {
         return @()
     }
 
-    $resolvedRoot = (Resolve-Path -LiteralPath $Root).Path.TrimEnd("\")
+    $resolvedRoot = (Resolve-Path -LiteralPath $Root).Path
+    $trimCharacters = [char[]]@(
+        [IO.Path]::DirectorySeparatorChar,
+        [IO.Path]::AltDirectorySeparatorChar
+    )
+    $rootPath = [IO.Path]::GetPathRoot($resolvedRoot)
+    if ($resolvedRoot.Length -gt $rootPath.Length) {
+        $resolvedRoot = $resolvedRoot.TrimEnd($trimCharacters)
+    }
     $files = foreach ($file in Get-ChildItem -Recurse -File -LiteralPath $resolvedRoot) {
-        $relativePath = $file.FullName.Substring($resolvedRoot.Length).TrimStart("\").Replace("\", "/")
+        $relativePath = $file.FullName.Substring($resolvedRoot.Length).TrimStart($trimCharacters).Replace("\", "/")
         if (Test-ManagedRelativePath $relativePath) {
             [pscustomobject]@{
                 RelativePath = $relativePath

@@ -294,7 +294,10 @@ class PythonSyncTests(unittest.TestCase):
 
             def fail_first_commit(source, target, *args, **kwargs):
                 nonlocal commit_failed
-                if Path(target) == current_file and not commit_failed:
+                if (
+                    Path(target).resolve() == current_file.resolve()
+                    and not commit_failed
+                ):
                     commit_failed = True
                     raise OSError("injected restore commit failure")
                 return real_copy2(source, target, *args, **kwargs)
@@ -316,6 +319,7 @@ class PythonSyncTests(unittest.TestCase):
                 result = sync.main()
 
             self.assertEqual(result, 1)
+            self.assertTrue(commit_failed)
             self.assertEqual(current_file.read_text(encoding="utf-8"), "current\n")
             self.assertEqual(stale_file.read_text(encoding="utf-8"), "new\n")
             self.assertEqual(ignored_file.read_text(encoding="utf-8"), "keep\n")
@@ -337,7 +341,7 @@ class PythonSyncTests(unittest.TestCase):
 
             def fail_commit_and_rollback(source, target, *args, **kwargs):
                 nonlocal destination_attempts
-                if Path(target) == current_file:
+                if Path(target).resolve() == current_file.resolve():
                     destination_attempts += 1
                     if destination_attempts <= 2:
                         raise OSError("injected destination copy failure")
@@ -365,6 +369,7 @@ class PythonSyncTests(unittest.TestCase):
 
             recovery_roots = list(root.glob(".agent-team-restore-*"))
             self.assertEqual(result, 1)
+            self.assertEqual(destination_attempts, 2)
             self.assertEqual(len(recovery_roots), 1)
             self.assertIn(str(recovery_roots[0]), stderr.getvalue())
             self.assertEqual(
@@ -525,4 +530,3 @@ class PowerShellSyncTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
