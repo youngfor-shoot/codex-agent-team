@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "codex-agent-team"
 description = "Codex Skill for choosing and coordinating the smallest safe Agent setup."
-version = "0.3.0"
+version = "0.5.5"
 requires-python = ">=3.10"
 
 [tool.ruff]

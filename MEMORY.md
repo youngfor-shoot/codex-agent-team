@@ -6,6 +6,57 @@ Store durable decisions for the canonical `agent-team` Skill source.
 
 ## Durable Decisions
 
+### 2026-09-21: v0.5.5 publication preparation
+
+- Prepared the release from an isolated clone of the committed canonical
+  source, preserving unrelated changes in the original checkout.
+- Reconciled previously accepted runtime hardening and its direct tests,
+  schemas, examples, and CI contracts into the release source.
+- Local validation: 92 package tests and 44 repository tests passed with two
+  Windows symlink-privilege skips total; lint, strict typing, metadata, and
+  task-packet examples passed. Native review limitations remain documented.
+- Public release must follow the protected main branch's CI summary check;
+  local verification does not substitute for remote CI or a published tag.
+
+### 2026-09-08: v0.5.5 source/runtime reconciliation candidate
+
+- The candidate imports accepted 0.5.4 runtime policy and package artifacts
+  without overwriting the dirty canonical checkout. Synchronizers manage the
+  executable surface, evaluation fixtures, and evidence reports, while runtime
+  maintenance metadata remains unowned and is preserved.
+- Native review is contingent on callable host capabilities and available model
+  usage. Completion requires no acceptance-blocking gap; bounded non-blocking
+  limitations remain part of the final evidence.
+
+### 2026-08-18: v0.3 contract hardening after issue #2 follow-up review
+
+- Codex-compatible Skill version metadata lives under `metadata.version`, not
+  as a top-level frontmatter key. `scripts/validate_skill.py` is the
+  dependency-free CI seam, and the bundled official validator also accepts the
+  canonical Skill.
+- Schema version 1 treats active-budget, review-grace, capture-size,
+  environment-passthrough, and active-seconds fields as additive. Older v1
+  files remain valid and runtime defaults preserve their behavior.
+- Evidence-loop lock files are reusable coordination namespaces. Failed init
+  leaves the lock path in place so it cannot unlink another process's lock.
+- Restore is exact for managed files: files absent from the chosen backup are
+  removed, backup files are copied, unknown files are preserved, and final
+  drift must be empty. Source and destination overlap, unsafe backup names, and
+  linked or reparse-point managed surfaces are rejected. A failed commit rolls
+  back; if rollback fails, its verified snapshot is preserved and reported.
+- Task packets and templates require exactly one complete `<task_handoff>` as
+  final document content. Metadata, Final State, headings, and handoff fields
+  have unambiguous scopes and duplicates are rejected. Routing fixtures are
+  checked against authority and recurring-wakeup signals derived from their
+  request text.
+- `SKILL.md` is a 151-line entrypoint whose procedures are one reference hop
+  away. CI pins CodeQL to a full SHA, enforces 90% branch coverage on the
+  deterministic routing/task-packet contracts and 80% on the evidence-loop/
+  synchronizer risk core, and runs PSScriptAnalyzer.
+- POSIX subprocesses do not inherit the controller's potentially stale `PWD`.
+  Untracked symlink target text is hashed without reading through links outside
+  the worktree.
+
 ### 2026-08-12: v0.2 adoption round (issue #2 triage)
 
 - `native-verifier` is the default independent-review backend: a separate

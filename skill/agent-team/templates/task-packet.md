@@ -32,6 +32,12 @@
 
 ### Mission
 
+## Final State
+
+For a completed packet, `remaining_risks: none` means no unresolved
+acceptance-blocking risk. Record non-blocking limitations in the evidence or
+limitations narrative; do not claim that the work has zero uncertainty.
+
 <task_handoff>
 finding_severity: none
 goal_alignment: aligned
@@ -39,5 +45,3 @@ scope_delta: none
 new_assumptions: none
 next_authorized_step: none
 </task_handoff>
-
-## Final State

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "run_id": "v0.1.0-golden",
+  "contract_file": "__CONTRACT_FILE__",
+  "contract_hash": "__CONTRACT_HASH__",
+  "state_hash": "__STATE_HASH__",
+  "revision": 3,
+  "iteration": 1,
+  "status": "verification_passed",
+  "worker_run_ids": ["v0-worker-1"],
+  "current_worker_run_id": "v0-worker-1",
+  "same_failure_streak": 0,
+  "last_failure_fingerprint": null,
+  "last_verification": {
+    "iteration": 1,
+    "worker_run_id": "v0-worker-1",
+    "passed": true,
+    "source_fingerprint": "__SOURCE_FINGERPRINT__",
+    "checks": [],
+    "evidence_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "last_review": null,
+  "stop_reason": null,
+  "history": [
+    {
+      "at": "2026-08-02T00:00:00Z",
+      "event": "initialized"
+    },
+    {
+      "at": "2026-08-02T00:01:00Z",
+      "event": "iteration_started",
+      "iteration": 1,
+      "worker_run_id": "v0-worker-1"
+    },
+    {
+      "at": "2026-08-02T00:04:00Z",
+      "event": "verification_passed",
+      "iteration": 1,
+      "evidence_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+interface:
+  display_name: "Agent Team"
+  short_description: "Choose the smallest safe Agent setup"
+  default_prompt: "Use $agent-team to preview or run this goal with controller-led, runtime-supported delegation and risk-matched verification."
+compatibility:
+  canonical_format: "agent-skills"
+  adapter_targets: ["openai"]
+  activation:
+    mode: "implicit"
+    paths: []
+  execution:
+    context: "inline"
+    shell: "powershell"
+  trust:
+    source_tier: "local"
+    remote_inline_execution: "forbid"
+    remote_metadata_policy: "allow-metadata-only"
+  degradation:
+    openai: "Use agents/openai.yaml for Codex display metadata; SKILL.md and references/controller-policy.md remain the behavioral source."

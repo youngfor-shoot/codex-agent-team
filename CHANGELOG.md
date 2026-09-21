@@ -2,7 +2,22 @@
 
 All notable changes to the `agent-team` Skill and this repository.
 
-## [Unreleased]
+## [0.5.5] - 2026-09-21
+
+This release gathers the accumulated source changes below. Local release
+checks passed: 134 tests with two Windows symlink-privilege skips, lint, strict
+typing, metadata, and task-packet examples. Historical native observations
+remain bounded by their recorded host and evidence limitations.
+
+### Runtime policy and package reconciliation
+
+- Canonical source now carries the accepted controller/executor boundary and
+  execution-first route, plus the runtime policy, interface adapter, package
+  fixtures, evaluation cases, and evidence reports.
+- Synchronizers manage those package artifacts and preserve unowned runtime
+  files such as local maintenance metadata.
+- Native review availability and model usage are checked from the current host;
+  unavailable required review remains pending.
 
 ### Added
 
@@ -43,16 +58,30 @@ All notable changes to the `agent-team` Skill and this repository.
 - `README.zh-CN.md`; community files (CONTRIBUTING, CODE_OF_CONDUCT, issue/PR
   templates); Discussions enabled.
 - CI quality gates: ruff, mypy --strict, CodeQL, Dependabot.
+- Dependency-free Skill metadata validation, branch-coverage enforcement for
+  routing/task-packet contracts, PSScriptAnalyzer, and regression tests for
+  installer restore, schema compatibility, routing authority, and examples.
 
 ### Changed
 
 - Independent review defaults to `native-verifier`; AgentParliament is an
   optional adapter, no longer the default review path.
-- SKILL.md split from 511 to ~270 lines; procedures moved to `references/`;
-  frontmatter `version: 0.3.0`.
+- SKILL.md is a compact entrypoint with detailed procedures in `references/`;
+  the current version is recorded as `metadata.version: 0.5.5` frontmatter.
 - Evidence-loop enforcement measured in active check-execution seconds with an
   8x wall-clock backstop, instead of wall-clock-only deadlines.
 - Verify drift exit code is now 2 (1 reserved for hard errors).
+- Restore converges exactly to the selected backup's managed-file set while
+  preserving unknown files; task packets end with one complete handoff block.
+- Schema-version-1 additive fields remain optional with runtime defaults;
+  routing fixtures derive authority and recurring wakeup from request text.
+- Restore rejects path-traversing backup names and linked managed surfaces,
+  rolls back failed commits, and preserves a verified recovery snapshot when
+  rollback itself fails.
+- Task-packet metadata and Final State fields are scoped independently;
+  duplicate headings/fields and conflicting status values are rejected.
+- Untracked symlink targets participate in source fingerprints, and POSIX
+  verification no longer inherits a potentially stale parent `PWD`.
 
 ## [v0.1.0] - 2026-08-02
 

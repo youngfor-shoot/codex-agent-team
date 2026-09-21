@@ -26,12 +26,15 @@ class WorkerProfileContractTests(unittest.TestCase):
         self.assertIn("references/implementation-lanes.md", skill)
         self.assertIn("`luna_worker`", lanes)
         self.assertIn("`terra_worker`", lanes)
-        self.assertIn("Prefer `luna_worker`", lanes)
-        self.assertIn("Use `terra_worker`", lanes)
+        normalized = re.sub(r"\s+", " ", lanes)
+        self.assertIn("Inspect live tool declarations", normalized)
+        self.assertIn("Custom roles can pin their model and effort: do not override them", normalized)
+        self.assertIn("controller-selected supported `model` and `reasoning_effort`", normalized)
         self.assertIn("`fork_turns: none`", lanes)
-        self.assertIn("Task size alone does not select Terra", lanes)
-        self.assertIn("correct the specification", lanes)
-        self.assertIn("never activates independent review", lanes)
+        self.assertIn("Routine implementation with an exact scope", normalized)
+        self.assertIn("security-sensitive implementation", normalized)
+        self.assertIn("correct the specification", normalized)
+        self.assertIn("never activates independent review", normalized)
 
 
 if __name__ == "__main__":

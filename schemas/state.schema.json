@@ -17,8 +17,7 @@
     "worker_run_ids",
     "current_worker_run_id",
     "same_failure_streak",
-    "history",
-    "active_seconds"
+    "history"
   ],
   "properties": {
     "schema_version": { "const": 1 },

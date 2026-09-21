@@ -1,0 +1,24 @@
+{
+  "fallback_positive_concepts": ["agent_team"],
+  "positive_concepts": {
+    "agent_team": {
+      "weight": 0.7,
+      "phrases": ["$agent-team", "agent team", "temporary team", "persistent team"]
+    },
+    "delegation": {
+      "weight": 0.2,
+      "phrases": ["bounded delegation", "delegate", "subagent", "sub-agent"]
+    },
+    "monitoring": {
+      "weight": 0.1,
+      "phrases": ["later monitoring", "keep working later", "recurring follow-up"]
+    }
+  },
+  "negative_concepts": {
+    "non_agent_task": {
+      "weight": 0.8,
+      "exclusive": true,
+      "phrases": ["write a poem", "translate this paragraph", "summarize this article"]
+    }
+  }
+}

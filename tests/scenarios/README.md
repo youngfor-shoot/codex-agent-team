@@ -17,6 +17,8 @@ decisions.
     fields, and explicit `explicit-invocation` / `auto-lifetime` authority;
   - `temporary` topology never creates user-owned tasks;
   - `heartbeat` / `cron` wakeups require a stop condition;
+  - documented English (`daily`, `every week`, `keep monitoring`) and Chinese
+    (`每天`, `每周`, `持续监控`) recurring wording requires a wakeup;
   - human gates must be from the allowed set.
 
 - Test: `scripts/test_routing_rules.py` validates every fixture's `expect`

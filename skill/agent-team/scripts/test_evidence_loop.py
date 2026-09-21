@@ -14,6 +14,9 @@ from unittest import mock
 
 import evidence_loop
 
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+V01_FIXTURE_ROOT = PACKAGE_ROOT / "tests" / "fixtures" / "v0.1.0"
+
 
 class EvidenceLoopTests(unittest.TestCase):
     @classmethod
@@ -206,6 +209,30 @@ class EvidenceLoopTests(unittest.TestCase):
         self.state = self.worktree / f"{self.case_dir.name}.json"
         with self.assertRaises(evidence_loop.LoopError):
             evidence_loop.init_run(self.init_args())
+
+    def test_failed_init_preserves_preexisting_lock_file(self) -> None:
+        lock_path = self.state.with_name(f"{self.state.name}.lock")
+        lock_path.write_bytes(b"existing-lock")
+        evidence_loop.contract_path_for(self.state).write_text(
+            "{}\n", encoding="utf-8"
+        )
+
+        with self.assertRaises(evidence_loop.LoopError):
+            evidence_loop.init_run(self.init_args())
+
+        self.assertEqual(lock_path.read_bytes(), b"existing-lock")
+
+    def test_failed_init_lock_namespace_is_reusable(self) -> None:
+        contract_path = evidence_loop.contract_path_for(self.state)
+        contract_path.write_text("{}\n", encoding="utf-8")
+
+        with self.assertRaises(evidence_loop.LoopError):
+            evidence_loop.init_run(self.init_args())
+
+        lock_path = self.state.with_name(f"{self.state.name}.lock")
+        self.assertTrue(lock_path.is_file())
+        contract_path.unlink()
+        self.assertEqual(evidence_loop.init_run(self.init_args()), 0)
 
     def test_rejects_worktree_inside_obsidian_vault(self) -> None:
         marker = self.root / ".obsidian"
@@ -402,10 +429,34 @@ class EvidenceLoopTests(unittest.TestCase):
         self.assertEqual(state["status"], "stopped_time")
         self.assertEqual(state["stop_reason"], "active_budget_exceeded")
 
+    def test_active_budget_limits_each_check_timeout(self) -> None:
+        args = self.init_args()
+        args.active_budget_seconds = 1
+        args.command_timeout = 5
+        evidence_loop.init_run(args)
+        evidence_loop.next_iteration(
+            self.state_args(worker_run_id="worker-active-timeout")
+        )
+        result = {
+            "command": args.check_json,
+            "returncode": 0,
+            "timed_out": False,
+            "duration_seconds": 0.5,
+            "stdout": "",
+            "stderr": "",
+        }
+
+        with mock.patch.object(
+            evidence_loop, "run_check", return_value=result
+        ) as run_check:
+            self.assertEqual(evidence_loop.verify_iteration(self.state_args()), 0)
+
+        self.assertEqual(run_check.call_args.args[2], 1.0)
+
     def test_review_grace_window_allows_late_review(self) -> None:
         # Verification passed; review within grace succeeds even past the
         # original wall-clock deadline.
-        evidence_loop.init_run(self.init_args())
+        evidence_loop.init_run(self.init_args(max_minutes=1))
         evidence_loop.next_iteration(
             self.state_args(worker_run_id="worker-grace-1")
         )
@@ -505,6 +556,279 @@ class EvidenceLoopTests(unittest.TestCase):
         args = mock.Mock(root=str(self.case_dir / "does-not-exist"))
         with self.assertRaises(evidence_loop.LoopError):
             evidence_loop.list_runs(args)
+
+    def test_cli_returns_nonzero_for_missing_list_root(self) -> None:
+        result = evidence_loop.main(
+            ["list", "--root", str(self.case_dir / "does-not-exist")]
+        )
+
+        self.assertEqual(result, 1)
+
+    def test_cli_lists_runs_from_existing_root(self) -> None:
+        result = evidence_loop.main(["list", "--root", str(self.case_dir)])
+
+        self.assertEqual(result, 0)
+
+    def test_show_status_reads_a_pinned_run(self) -> None:
+        evidence_loop.init_run(self.init_args())
+
+        result = evidence_loop.show_status(
+            self.state_args(verbose=True)
+        )
+
+        self.assertEqual(result, 0)
+
+    def test_list_runs_skips_corrupt_json(self) -> None:
+        (self.case_dir / "not-a-state.json").write_text("{", encoding="utf-8")
+
+        result = evidence_loop.list_runs(mock.Mock(root=str(self.case_dir)))
+
+        self.assertEqual(result, 0)
+
+    def test_path_fingerprint_hashes_a_directory(self) -> None:
+        asset_directory = self.case_dir / "assets"
+        asset_directory.mkdir()
+        (asset_directory / "one.txt").write_text("one\n", encoding="utf-8")
+
+        fingerprint = evidence_loop.path_fingerprint(asset_directory)
+
+        self.assertRegex(fingerprint, r"^[0-9a-f]{64}$")
+
+    def test_path_fingerprint_rejects_sensitive_and_missing_paths(self) -> None:
+        sensitive = self.case_dir / ".env"
+        sensitive.write_text("not-a-secret\n", encoding="utf-8")
+
+        with self.subTest(case="sensitive"), self.assertRaisesRegex(
+            evidence_loop.LoopError, "Sensitive-looking"
+        ):
+            evidence_loop.path_fingerprint(sensitive)
+        with self.subTest(case="missing"), self.assertRaisesRegex(
+            evidence_loop.LoopError, "does not exist"
+        ):
+            evidence_loop.path_fingerprint(self.case_dir / "missing")
+
+    def test_path_fingerprint_rejects_directory_link_escape(self) -> None:
+        asset_directory = self.case_dir / "assets-link-escape"
+        outside = self.case_dir / "outside.txt"
+        asset_directory.mkdir()
+        outside.write_text("outside\n", encoding="utf-8")
+        link = asset_directory / "escaped.txt"
+        try:
+            os.symlink(outside, link)
+        except OSError as error:
+            self.skipTest(f"symlinks unavailable: {error}")
+        try:
+            with self.assertRaisesRegex(
+                evidence_loop.LoopError, "escapes through a link"
+            ):
+                evidence_loop.path_fingerprint(asset_directory)
+        finally:
+            link.unlink(missing_ok=True)
+
+    def test_validate_frozen_assets_rejects_missing_file(self) -> None:
+        contract = {
+            "frozen_assets": {
+                str(self.case_dir / "missing-acceptance.py"): "a" * 64
+            }
+        }
+
+        with self.assertRaisesRegex(
+            evidence_loop.LoopError, "Frozen acceptance asset changed"
+        ):
+            evidence_loop.validate_frozen_assets(contract)
+
+    def test_source_fingerprint_accounts_for_untracked_files(self) -> None:
+        baseline = evidence_loop.source_fingerprint(
+            self.worktree, evidence_loop.git_identity(self.worktree)["base_commit"]
+        )
+        plain = self.worktree / "coverage-untracked.txt"
+        sensitive = self.worktree / ".env.coverage"
+        try:
+            plain.write_text("plain\n", encoding="utf-8")
+            sensitive.write_text("not-a-secret\n", encoding="utf-8")
+
+            changed = evidence_loop.source_fingerprint(
+                self.worktree,
+                evidence_loop.git_identity(self.worktree)["base_commit"],
+            )
+        finally:
+            plain.unlink(missing_ok=True)
+            sensitive.unlink(missing_ok=True)
+
+        self.assertNotEqual(changed, baseline)
+
+    def test_source_fingerprint_accounts_for_untracked_symlink_target(self) -> None:
+        first_target = self.case_dir / "first-target.txt"
+        second_target = self.case_dir / "second-target.txt"
+        first_target.write_text("first\n", encoding="utf-8")
+        second_target.write_text("second\n", encoding="utf-8")
+        link = self.worktree / "coverage-untracked-link.txt"
+        try:
+            os.symlink(first_target, link)
+        except OSError as error:
+            self.skipTest(f"file symlinks unavailable: {error}")
+        try:
+            first = evidence_loop.source_fingerprint(
+                self.worktree,
+                evidence_loop.git_identity(self.worktree)["base_commit"],
+            )
+            link.unlink()
+            os.symlink(second_target, link)
+            second = evidence_loop.source_fingerprint(
+                self.worktree,
+                evidence_loop.git_identity(self.worktree)["base_commit"],
+            )
+        finally:
+            link.unlink(missing_ok=True)
+
+        self.assertNotEqual(second, first)
+
+    def test_run_check_reports_missing_executable(self) -> None:
+        result = evidence_loop.run_check(
+            ["codex-agent-team-missing-executable"],
+            self.worktree,
+            timeout_seconds=1,
+        )
+
+        self.assertNotEqual(result["returncode"], 0)
+        self.assertFalse(result["timed_out"])
+
+    def test_run_check_returns_launch_error_without_raising(self) -> None:
+        with mock.patch.object(
+            evidence_loop.subprocess,
+            "Popen",
+            side_effect=OSError("launch denied"),
+        ):
+            result = evidence_loop.run_check(
+                [sys.executable, "acceptance.py"],
+                self.worktree,
+                timeout_seconds=1,
+            )
+
+        self.assertIsNone(result["returncode"])
+        self.assertFalse(result["timed_out"])
+        self.assertIn("launch denied", result["stderr"])
+
+    def test_terminate_process_tree_kills_then_waits_on_posix(self) -> None:
+        process = mock.Mock()
+        process.poll.return_value = None
+        process.pid = 123
+        process.wait.side_effect = [
+            subprocess.TimeoutExpired(["check"], 15),
+            None,
+        ]
+        with (
+            mock.patch.object(evidence_loop.os, "name", "posix"),
+            mock.patch.object(evidence_loop.os, "killpg", create=True) as killpg,
+            mock.patch("signal.SIGKILL", 9, create=True),
+        ):
+            terminated = evidence_loop.terminate_process_tree(process, None)
+
+        self.assertTrue(terminated)
+        killpg.assert_called_once()
+        process.kill.assert_called_once()
+
+    def test_terminate_process_tree_reports_failed_force_kill(self) -> None:
+        process = mock.Mock()
+        process.poll.return_value = 0
+        process.wait.side_effect = [
+            subprocess.TimeoutExpired(["check"], 15),
+            OSError("kill denied"),
+        ]
+
+        self.assertFalse(evidence_loop.terminate_process_tree(process, None))
+        process.kill.assert_called_once()
+
+    def test_posix_signal_cleanup_kills_child_group_and_restores_handlers(self) -> None:
+        process = mock.Mock()
+        process.pid = 456
+        with (
+            mock.patch.object(evidence_loop.os, "name", "posix"),
+            mock.patch.object(evidence_loop.os, "killpg", create=True) as killpg,
+            mock.patch("signal.SIGKILL", 9, create=True),
+            mock.patch(
+                "signal.signal",
+                side_effect=["old-int", "old-term", None, None],
+            ) as signal_fn,
+            evidence_loop.posix_signal_cleanup(process),
+        ):
+            handler = signal_fn.call_args_list[0].args[1]
+            handler(None, None)
+
+        killpg.assert_called_once()
+        self.assertEqual(signal_fn.call_count, 4)
+        self.assertEqual(signal_fn.call_args_list[2].args[1], "old-int")
+        self.assertEqual(signal_fn.call_args_list[3].args[1], "old-term")
+
+    def test_windows_wrapper_preserves_check_command(self) -> None:
+        command = [sys.executable, "acceptance.py", "--strict"]
+
+        wrapped = evidence_loop.windows_wrapped_command(command)
+
+        self.assertEqual(wrapped[:3], [
+            sys.executable,
+            str(Path(evidence_loop.__file__).resolve()),
+            "--internal-exec-check",
+        ])
+        self.assertEqual(json.loads(wrapped[3]), command)
+
+    def test_internal_exec_check_rejects_interactive_stdin(self) -> None:
+        stdin = mock.Mock()
+        stdin.isatty.return_value = True
+
+        with mock.patch.object(evidence_loop.sys, "stdin", stdin):
+            result = evidence_loop.exec_check_main(json.dumps(["python"]))
+
+        self.assertEqual(result, 127)
+
+    def test_internal_exec_check_requires_sentinel_then_runs_command(self) -> None:
+        stdin = mock.Mock()
+        stdin.isatty.return_value = False
+        stdin.buffer.read.return_value = b""
+        with mock.patch.object(evidence_loop.sys, "stdin", stdin):
+            self.assertEqual(
+                evidence_loop.exec_check_main(
+                    json.dumps([sys.executable, "--version"])
+                ),
+                125,
+            )
+
+        stdin.buffer.read.return_value = b"1"
+        completed = mock.Mock(returncode=7)
+        with (
+            mock.patch.object(evidence_loop.sys, "stdin", stdin),
+            mock.patch.object(
+                evidence_loop.subprocess, "run", return_value=completed
+            ) as run,
+        ):
+            result = evidence_loop.exec_check_main(
+                json.dumps([sys.executable, "--version"])
+            )
+
+        self.assertEqual(result, 7)
+        self.assertEqual(run.call_args.args[0], [sys.executable, "--version"])
+        self.assertFalse(run.call_args.kwargs["shell"])
+
+    def test_parse_command_rejects_invalid_and_inline_evaluation(self) -> None:
+        cases = (
+            ("not-json", "not valid JSON"),
+            ("[]", "non-empty JSON string array"),
+            ('["node", "--eval", "1"]', "Inline Node.js"),
+            ('["python", "-c", "pass"]', "Inline Python"),
+        )
+        for raw, message in cases:
+            with self.subTest(raw=raw), self.assertRaisesRegex(
+                evidence_loop.LoopError, message
+            ):
+                evidence_loop.parse_command(raw)
+
+    def test_bounded_int_rejects_out_of_range_values(self) -> None:
+        parse = evidence_loop.bounded_int(1, 2)
+
+        with self.assertRaisesRegex(
+            evidence_loop.argparse.ArgumentTypeError, "between 1 and 2"
+        ):
+            parse("3")
 
     def test_source_change_after_verification_requires_reverification(self) -> None:
         evidence_loop.init_run(self.init_args())
@@ -624,6 +948,110 @@ class EvidenceLoopTests(unittest.TestCase):
         with self.assertRaises(OSError), contract_path.open("a", encoding="utf-8"):
             pass
 
+    def test_schema_v1_files_without_additive_fields_remain_usable(self) -> None:
+        evidence_loop.init_run(self.init_args())
+        state = self.load()
+        contract_path = Path(state["contract_file"])
+        os.chmod(contract_path, stat.S_IRUSR | stat.S_IWUSR)
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+        contract.pop("env_passthrough")
+        for field in (
+            "active_budget_seconds",
+            "review_grace_minutes",
+            "max_capture_chars",
+        ):
+            contract["limits"].pop(field)
+        contract_path.write_text(
+            json.dumps(contract, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        state.pop("active_seconds")
+        state["contract_hash"] = evidence_loop.contract_hash(contract)
+        state["state_hash"] = evidence_loop.state_hash(state)
+        self.state.write_text(
+            json.dumps(state, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        self.assertEqual(
+            evidence_loop.next_iteration(
+                self.state_args(worker_run_id="worker-schema-v1")
+            ),
+            0,
+        )
+        self.assertEqual(evidence_loop.verify_iteration(self.state_args()), 0)
+        self.assertEqual(
+            evidence_loop.record_review(
+                self.state_args(
+                    result="pass",
+                    reason_code=None,
+                    reviewer_run_id="review-schema-v1",
+                    reviewer_backend="native-verifier",
+                    artifact_hash="c" * 64,
+                )
+            ),
+            0,
+        )
+
+    def test_v010_verification_passed_fixture_uses_recorded_review_grace(self) -> None:
+        harness = self.harness()
+        contract = json.loads(
+            (V01_FIXTURE_ROOT / "evidence-loop-contract.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        identity = evidence_loop.git_identity(self.worktree)
+        contract.update(
+            {
+                "worktree": str(self.worktree),
+                "checks": [[sys.executable, str(harness)]],
+                "controller_harnesses": [str(harness)],
+                "git_identity": identity,
+            }
+        )
+        contract_path = evidence_loop.contract_path_for(self.state)
+        contract_path.write_text(
+            json.dumps(contract, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        state = json.loads(
+            (
+                V01_FIXTURE_ROOT
+                / "evidence-loop-state-verification-passed.json"
+            ).read_text(encoding="utf-8")
+        )
+        state["contract_file"] = str(contract_path)
+        state["contract_hash"] = evidence_loop.contract_hash(contract)
+        state["last_verification"]["source_fingerprint"] = (
+            evidence_loop.source_fingerprint(
+                self.worktree, identity["base_commit"]
+            )
+        )
+        state["state_hash"] = evidence_loop.state_hash(state)
+        self.state.write_text(
+            json.dumps(state, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        with mock.patch.object(
+            evidence_loop,
+            "utc_now",
+            return_value=evidence_loop.parse_time("2026-08-02T00:10:00Z"),
+        ):
+            result = evidence_loop.record_review(
+                self.state_args(
+                    result="pass",
+                    reason_code=None,
+                    reviewer_run_id="v0-review-1",
+                    reviewer_backend="native-verifier",
+                    artifact_hash="d" * 64,
+                )
+            )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(self.load()["status"], "completed")
+
     def test_sanitized_environment_includes_posix_variables(self) -> None:
         previous = {
             name: evidence_loop.os.environ.get(name) for name in ("HOME", "LANG", "LOGNAME")
@@ -672,6 +1100,43 @@ class EvidenceLoopTests(unittest.TestCase):
     def test_env_passthrough_rejects_invalid_name(self) -> None:
         with self.assertRaises(evidence_loop.LoopError):
             evidence_loop.validate_env_passthrough(("NOT A VALID NAME",))
+
+    def test_posix_env_passthrough_preserves_exact_case(self) -> None:
+        environment = {
+            "AGENT_TEAM_CUSTOM": "upper",
+            "agent_team_custom": "lower",
+            "PATH": "/usr/bin",
+        }
+        with (
+            mock.patch.object(evidence_loop.os, "name", "posix"),
+            mock.patch.object(evidence_loop.os, "environ", environment),
+        ):
+            names = evidence_loop.validate_env_passthrough(
+                ("AGENT_TEAM_CUSTOM",)
+            )
+            sanitized = evidence_loop.sanitized_environment(names)
+
+        self.assertEqual(names, ["AGENT_TEAM_CUSTOM"])
+        self.assertEqual(sanitized["AGENT_TEAM_CUSTOM"], "upper")
+        self.assertNotIn("agent_team_custom", sanitized)
+
+    def test_posix_environment_does_not_inherit_parent_pwd(self) -> None:
+        environment = {"PATH": "/usr/bin", "PWD": "/wrong/worktree"}
+        with (
+            mock.patch.object(evidence_loop.os, "name", "posix"),
+            mock.patch.object(evidence_loop.os, "environ", environment),
+        ):
+            sanitized = evidence_loop.sanitized_environment()
+
+        self.assertNotIn("PWD", sanitized)
+
+    def test_posix_env_passthrough_keeps_mixed_case_name(self) -> None:
+        with mock.patch.object(evidence_loop.os, "name", "posix"):
+            names = evidence_loop.validate_env_passthrough(
+                ("Agent_Team_Custom",)
+            )
+
+        self.assertEqual(names, ["Agent_Team_Custom"])
 
     def test_run_check_passes_frozen_environment(self) -> None:
         script = self.harness(

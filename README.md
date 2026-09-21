@@ -6,7 +6,9 @@
 
 `agent-team` is a Codex Skill for choosing and coordinating the smallest safe
 Agent setup for a task. It separates five decisions that are often mixed
-together: topology, wakeups, convergence, verification, and human gates.
+together: topology, wakeups, convergence, verification, and human gates. The
+ROOT controller owns those decisions, task scope, integration, and acceptance;
+an EXECUTOR follows its exact assignment and reports evidence.
 
 This repository ships a Skill and deterministic guardrail scripts, not a
 standalone multi-agent runtime. Codex remains the controller and final
@@ -21,9 +23,10 @@ authority.
 - Requires deterministic checks for material work and adds independent review
   only for a named residual risk, using a zero-dependency native verifier by
   default with an optional AgentParliament adapter.
-- Optionally routes specification-determined temporary implementation to a
-  Luna worker and context-heavy or higher-risk implementation to a Terra
-  worker while Codex retains architecture and acceptance.
+- Routes bounded implementation using the models and agent types exposed by
+  the current runtime.
+- Offers optional Luna and Terra worker profiles; Codex keeps architecture and
+  acceptance.
 - Preserves human gates around publication, deployment, deletion, payment,
   permissions, and other consequential actions.
 - Validates task packets and can freeze an isolated Git-worktree evidence loop.
@@ -74,9 +77,33 @@ by itself.
   read-only Codex context with zero external dependencies.
 - **AgentParliament / Reasonix** — an optional review adapter, never required
   for Agent Team to operate.
-- **Luna / Terra lanes** — optional implementation profiles for temporary
-  delegation: `luna_worker` for specification-determined work, `terra_worker`
-  for context-heavy or higher-risk implementation.
+- **ROOT** — the controller role that owns authority, routing, scope,
+  integration, and final acceptance.
+- **EXECUTOR** — a parent-assigned worker limited to its stated scope. It does
+  not choose a team or model, create tasks or Automations, or promote itself.
+  Subdelegation requires an explicit ROOT grant for a named scope.
+
+## Runtime-aware model and effort guidance
+
+The matrix is selection guidance, not a guarantee that a model or native agent
+type is available in a particular session. Check the current runtime's callable
+types and supported models/efforts before dispatch. These suggestions make no
+quality, speed, cost, or benchmark claims.
+
+| Model | Suggested effort | Typical bounded work |
+| --- | --- | --- |
+| Spark (`gpt-5.3-codex-spark`) | low or medium | Tiny precise edits or fast, bounded read-only inspection. |
+| Luna (`gpt-5.6-luna`) | medium or high | Routine implementation with exact scope, settled interfaces, and observable acceptance. |
+| Sol (`gpt-5.6-sol`) | medium or high | General bounded execution that needs more judgment than routine work. |
+| Terra (`gpt-5.6-terra`) | high or xhigh | Cross-module correctness, difficult debugging, concurrency, persistence, or security-sensitive implementation. |
+| Astra (`gpt-6-astra`) | high or xhigh | A separately justified difficult analysis or investigation that can run independently. |
+
+Effort support is runtime-dependent. Request `max` only when task risk,
+complexity, a contract, or evidence justifies it. The two bundled optional
+profiles are `luna_worker` and `terra_worker`; each pins its named model and
+`max` effort. Those profile settings do not attest the effective runtime
+identity. Requested and effective model/effort are separate facts; report an
+effective value as unknown when the runtime does not attest it.
 
 ## Requirements
 
@@ -116,9 +143,11 @@ copy. Pass `--destination <path>` (Python) or `-Destination <path>`
 
 The companion helper installs only `luna-worker.toml` and
 `terra-worker.toml` to `~/.codex/agents`, backing up existing managed copies
-and preserving every unrelated Agent file. These optional lanes require
-runtime access to `gpt-5.6-luna` and `gpt-5.6-terra`; Agent Team remains usable
-with explicitly reported native fallback roles when they are unavailable.
+and preserving every unrelated Agent file. These are the only bundled worker
+profiles. They require the matching model and agent type to be supported by the
+current runtime; if unavailable, use only another currently supported route
+and report the substitution or blocker. The profiles' pinned `max` effort is
+an explicit role setting, not a general effort recommendation.
 
 On another platform, copy `skill/agent-team/` to
 `~/.codex/skills/agent-team/` with the platform's normal file tools.
@@ -155,14 +184,15 @@ history.
 ## Safety model
 
 - The evidence loop runs only in a clean linked Git worktree, never a main
-  checkout.
+  checkout; a worktree is not an operating-system sandbox.
 - Acceptance commands and assets are frozen outside worker ownership.
 - Obsidian vaults are rejected automatically; callers must declare other
   sensitive roots with `--protected-path`.
 - Shell and network launchers, inline interpreter evaluation, unbounded output,
   and secret-like output are blocked or redacted by the helper.
-- The helper does not provide an operating-system sandbox, create Agents,
-  merge, deploy, publish, or cross a human gate.
+- Agent instructions and a separate worktree do not isolate native tools or
+  operating-system access. The helper does not provide an operating-system
+  sandbox, create Agents, merge, deploy, publish, or cross a human gate.
 
 See [`SECURITY.md`](SECURITY.md) for private vulnerability reporting.
 
