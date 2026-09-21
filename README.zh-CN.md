@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/youngfor-shoot/codex-agent-team/actions/workflows/ci.yml/badge.svg)](https://github.com/youngfor-shoot/codex-agent-team/actions/workflows/ci.yml)
 
-`agent-team` 是一个 Codex Skill，用于为任务选择并编排**最小且安全**的 Agent 配置。它把经常被混为一谈的五个决策分开处理：拓扑（topology）、唤醒（wakeup）、收敛（convergence）、验证（verification）和人工门（human gates）。
+`agent-team` 是一个 Codex Skill，用于为任务选择并编排**最小且安全**的 Agent 配置。它把经常被混为一谈的五个决策分开处理：拓扑（topology）、唤醒（wakeup）、收敛（convergence）、验证（verification）和人工门（human gates）。ROOT 控制器负责这些决策、任务范围、整合和验收；EXECUTOR 只能按明确分配的范围执行并回报证据。
 
 本仓库交付的是 Skill 和确定性的护栏脚本，不是独立的多 Agent 运行时。Codex 始终是控制者和最终权威。
 
@@ -12,6 +12,8 @@
 - 把周期性唤醒与团队生命周期分开。
 - 选择单次通过、阶段门或受控证据循环。
 - 对实质性工作强制确定性检查，仅对具名的残余风险增加独立审查。
+- 根据当前运行时公开的模型和 Agent 类型路由有界实现。
+- 提供可选的 Luna 和 Terra worker 配置；Codex 仍负责架构和验收。
 - 围绕发布、部署、删除、支付、权限等后果性动作保留人工门。
 - 校验任务包（task packet），并能冻结隔离的 Git worktree 证据循环。
 
@@ -45,7 +47,22 @@
 - **证据循环（Evidence loop）**——在隔离的链接 Git worktree 中进行的有界、冻结检查迭代，由契约/状态哈希和必需审查把关。
 - **原生验证器（Native verifier）**——默认独立审查后端：独立的只读 Codex 上下文，零外部依赖。
 - **AgentParliament / Reasonix**——可选审查适配器，绝不要求 Agent Team 依赖它。
-- **Luna / Terra 通道**——临时委派的可选实现配置：`luna_worker` 用于规格决定的工作，`terra_worker` 用于上下文密集或更高风险的实现。
+- **ROOT**——控制器角色，负责授权、路由、范围、整合和最终验收。
+- **EXECUTOR**——受父级分配范围约束的执行者；不能选择团队或模型、创建任务或自动化，也不能提升自身权限。只有 ROOT 明确授予具名范围时才可继续委派。
+
+## 运行时模型与 effort 建议
+
+此矩阵是选型建议，不保证某次会话具备相应模型或原生 Agent 类型。委派前应检查当前运行时可调用的类型及支持的模型/effort。矩阵不作质量、速度、成本或基准测试承诺。
+
+| 模型 | 建议 effort | 常见的有界工作 |
+| --- | --- | --- |
+| Spark (`gpt-5.3-codex-spark`) | low 或 medium | 很小且明确的修改，或快速、有界的只读检查。 |
+| Luna (`gpt-5.6-luna`) | medium 或 high | 范围明确、接口已确定、验收可观察的常规实现。 |
+| Sol (`gpt-5.6-sol`) | medium 或 high | 需要比常规工作更多判断的一般有界执行。 |
+| Terra (`gpt-5.6-terra`) | high 或 xhigh | 跨模块正确性、困难调试、并发、持久化或安全敏感实现。 |
+| Astra (`gpt-6-astra`) | high 或 xhigh | 有独立价值且确有理由的困难分析或调查。 |
+
+effort 支持情况取决于运行时。只有任务风险、复杂度、契约要求或同一有界目标在较低 effort 下失败的证据足以支持请求 `max`。仓库只有两个可选 worker 配置：`luna_worker` 和 `terra_worker`；它们分别固定对应模型和 `max` effort。这些配置不能证明运行时实际使用了对应身份。请求值和实际值是两类证据；运行时没有确认时，应将实际模型/effort 记为未知。
 
 ## 要求
 
@@ -78,6 +95,9 @@ Set-Location codex-agent-team
 
 助手默认安装到 `~/.codex/skills/agent-team`，备份当前受管文件、保留未知文件，并在复制后校验哈希。使用 `--destination <path>`（Python）或 `-Destination <path>`（PowerShell）指定其他位置。
 
+配套助手只会把 `luna-worker.toml` 和 `terra-worker.toml` 安装到
+`~/.codex/agents`，并备份受管配置、保留其他 Agent 文件。这是仓库提供的全部 worker 配置。它们要求当前运行时支持相应模型和 Agent 类型；若不可用，只能改用当前运行时支持的其他路由，并报告替代方案或阻塞。配置中的 `max` 是显式角色设置，不代表一般 effort 建议。
+
 ## 使用
 
 预览拓扑（无副作用）：
@@ -102,11 +122,11 @@ Use $agent-team to complete: audit and repair this release workflow
 
 ## 安全模型
 
-- 证据循环只在干净的链接 Git worktree 中运行，绝不在主检出中。
+- 证据循环只在干净的链接 Git worktree 中运行，绝不在主检出中；worktree 不等于操作系统沙箱。
 - 验收命令和资产冻结在 worker 所有权之外。
 - Obsidian 仓库被自动拒绝；调用方必须用 `--protected-path` 声明其他敏感根。
 - Shell 和网络启动器、内联解释器求值、无界输出和类秘密输出会被助手拦截或脱敏。
-- 助手不提供操作系统沙箱，不创建 Agent，不合并、部署、发布或跨越人工门。
+- Agent 指令和独立 worktree 都不会隔离原生工具或操作系统访问。助手不提供操作系统沙箱，不创建 Agent，不合并、部署、发布或跨越人工门。
 
 敏感报告请参见 [`SECURITY.md`](SECURITY.md)。
 

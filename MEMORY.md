@@ -6,6 +6,18 @@ Store durable decisions for the canonical `agent-team` Skill source.
 
 ## Durable Decisions
 
+### 2026-09-21: v0.5.5 publication preparation
+
+- Prepared the release from an isolated clone of the committed canonical
+  source, preserving unrelated changes in the original checkout.
+- Reconciled previously accepted runtime hardening and its direct tests,
+  schemas, examples, and CI contracts into the release source.
+- Local validation: 92 package tests and 44 repository tests passed with two
+  Windows symlink-privilege skips total; lint, strict typing, metadata, and
+  task-packet examples passed. Native review limitations remain documented.
+- Public release must follow the protected main branch's CI summary check;
+  local verification does not substitute for remote CI or a published tag.
+
 ### 2026-09-08: v0.5.5 source/runtime reconciliation candidate
 
 - The candidate imports accepted 0.5.4 runtime policy and package artifacts

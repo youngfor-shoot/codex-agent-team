@@ -2,9 +2,14 @@
 
 All notable changes to the `agent-team` Skill and this repository.
 
-## [Unreleased]
+## [0.5.5] - 2026-09-21
 
-### 0.5.5 reconciliation
+This release gathers the accumulated source changes below. Local release
+checks passed: 134 tests with two Windows symlink-privilege skips, lint, strict
+typing, metadata, and task-packet examples. Historical native observations
+remain bounded by their recorded host and evidence limitations.
+
+### Runtime policy and package reconciliation
 
 - Canonical source now carries the accepted controller/executor boundary and
   execution-first route, plus the runtime policy, interface adapter, package
@@ -61,8 +66,8 @@ All notable changes to the `agent-team` Skill and this repository.
 
 - Independent review defaults to `native-verifier`; AgentParliament is an
   optional adapter, no longer the default review path.
-- SKILL.md split from 511 to 151 lines; procedures moved to `references/`;
-  version recorded as supported `metadata.version: 0.3.0` frontmatter.
+- SKILL.md is a compact entrypoint with detailed procedures in `references/`;
+  the current version is recorded as `metadata.version: 0.5.5` frontmatter.
 - Evidence-loop enforcement measured in active check-execution seconds with an
   8x wall-clock backstop, instead of wall-clock-only deadlines.
 - Verify drift exit code is now 2 (1 reserved for hard errors).
