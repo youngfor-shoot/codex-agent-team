@@ -699,6 +699,9 @@ def posix_signal_cleanup(process: subprocess.Popen[bytes]) -> Any:
     def _kill_child_group(_signum: int, _frame: Any) -> None:
         with suppress(ProcessLookupError, OSError):
             os.killpg(process.pid, signal.SIGKILL)  # type: ignore[attr-defined]
+        if _signum == signal.SIGINT:
+            raise KeyboardInterrupt
+        raise SystemExit(128 + _signum)
 
     previous_int = signal.signal(signal.SIGINT, _kill_child_group)
     previous_term = signal.signal(signal.SIGTERM, _kill_child_group)
@@ -766,6 +769,10 @@ def run_check(
                 windows_job = None
                 if not terminated:
                     returncode = -1
+            except (KeyboardInterrupt, SystemExit):
+                terminate_process_tree(process, windows_job)
+                windows_job = None
+                raise
             finally:
                 close_windows_handle(windows_job)
             return {

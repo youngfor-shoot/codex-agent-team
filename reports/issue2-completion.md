@@ -49,7 +49,17 @@ Final installer suite: 22 tests, 21 passed, one Windows symlink-privilege skip.
 Both implementations preserve hidden contents and unrelated empty directories;
 Python also exercises undecodable hidden bytes. Existing clean-target install,
 verification, restore, and failed-restore recovery regressions pass. Ruff passed
-and strict mypy passed for the affected Python installer. Stages 2-4 are pending.
+and strict mypy passed for the affected Python installer.
+
+### Stage 2: cancellation (passed locally)
+
+New regressions first reproduced swallowed SIGINT/SIGTERM and missing process
+reaping on cancellation. Cleanup now terminates the child process tree, restores
+the previous signal handlers, and propagates interruption to the caller. The
+focused tests and complete evidence-loop suite passed on Windows, as did Ruff,
+strict mypy, and whitespace checks. A real subprocess signal regression checks
+that the following check is never reached; it is skipped on Windows and remains
+a required Linux/macOS CI gate. Stages 3-4 are pending.
 
 ## Delegation evidence
 
