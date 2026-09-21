@@ -111,6 +111,14 @@ walkthrough was recaptured and independently rechecked on the final helper.
 The final package suite contains 109 tests; final cross-platform execution is
 reported by the PR's required CI checks.
 
+The first cross-platform CI run exposed a portability flaw in the PowerShell
+failure-injection test: matching absolute path strings could skip injection for
+equivalent file paths. A forward-slash Windows alias reproduced the same false
+success locally. The single-file fixture now matches its target leaf name and
+asserts the injection marker before evaluating the exit code. Focused tests
+passed under both Windows PowerShell and PowerShell 7; production installer
+behavior was unchanged. CI is rerun for the corrected candidate.
+
 ## Delegation evidence
 
 Stage 1 uses one bounded executor for the two installers and their tests while

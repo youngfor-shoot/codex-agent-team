@@ -760,7 +760,7 @@ $blockedPath = $env:SYNC_AGENT_TEAM_BLOCKED_FILE
 $markerPath = $env:SYNC_AGENT_TEAM_MARKER_FILE
 function global:Remove-Item {
     param([string]$LiteralPath, [switch]$Force, [string]$ErrorAction)
-    if ($LiteralPath -eq $blockedPath) {
+    if ([IO.Path]::GetFileName($LiteralPath) -eq [IO.Path]::GetFileName($blockedPath)) {
         [IO.File]::WriteAllText($markerPath, "Remove-Item reached")
         if ($ErrorAction -eq "SilentlyContinue") { return }
         throw "simulated locked managed file"
@@ -773,7 +773,8 @@ exit $LASTEXITCODE
             environment = os.environ.copy()
             environment["SYNC_AGENT_TEAM_SCRIPT"] = str(POWERSHELL_SYNC)
             environment["SYNC_AGENT_TEAM_DESTINATION"] = str(destination)
-            environment["SYNC_AGENT_TEAM_BLOCKED_FILE"] = str(blocked_file)
+            # The same file may have different path spelling in a CI worker.
+            environment["SYNC_AGENT_TEAM_BLOCKED_FILE"] = blocked_file.as_posix()
             environment["SYNC_AGENT_TEAM_MARKER_FILE"] = str(marker_file)
             result = subprocess.run(
                 [
@@ -790,8 +791,8 @@ exit $LASTEXITCODE
                 env=environment,
             )
 
-            self.assertNotEqual(result.returncode, 0, result.stderr)
             self.assertEqual(marker_file.read_text(encoding="utf-8"), "Remove-Item reached")
+            self.assertNotEqual(result.returncode, 0, result.stderr)
             self.assertIn("simulated locked managed file", result.stderr)
             self.assertNotIn("Uninstalled agent-team runtime copy", result.stdout)
             self.assertTrue(blocked_file.exists())

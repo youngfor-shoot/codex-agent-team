@@ -23,6 +23,12 @@ exclude the hidden filename from its inventory; both implementations passed.
 The single focused recheck passed with no remaining findings. The reviewer
 did not execute tests; controller execution and CI are separate evidence.
 
+Subsequent CI also exposed an equivalent-path fault-injection mismatch in the
+PowerShell test harness. The controller reproduced it using a Windows slash
+alias, corrected the fixture match, and passed the targeted test under both
+PowerShell editions. This was a test-only portability correction after review;
+the production code and captured walkthrough helper remained unchanged.
+
 Walkthrough reviewer `/root/audit_issue_spec` independently inspected the real
 capsule and then rechecked a fresh run after cancellation hardening changed the
 helper hash. Both passed. The final transcript and complete hashed review
