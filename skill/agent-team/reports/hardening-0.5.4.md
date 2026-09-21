@@ -53,8 +53,7 @@ No private API, new provider, hook rewrite, or weakened control was introduced.
 
 ## Evidence and scope
 
-Current-run traces are under
-`D:/升级/agent-routing-validation/hardening-054/`, including the complete
+Current-run traces remain in a maintainer-local evidence directory (not shipped), including the complete
 regression logs and the three native probe outputs. The legacy JSON fixtures
 are compatibility test inputs, not proof of current execution. Prior ordinary
 workflow acceptance remains limited to its recorded file-backed fixture.

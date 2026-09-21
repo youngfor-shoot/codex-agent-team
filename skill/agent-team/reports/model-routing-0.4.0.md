@@ -31,7 +31,7 @@ implemented none of the reviewed files. All handoff fields were supplied.
   interface fields, and Markdown file links.
 - Existing regression suite: 92 tests, 90 passed, 1 skipped, 1 error.
   The error is FileNotFoundError for the pre-existing legacy fixture reference
-  C:/Users/wxdev/.codex/tests/fixtures/v0.1.0/evidence-loop-contract.json in
+  ~/.codex/tests/fixtures/v0.1.0/evidence-loop-contract.json in
   test_v010_verification_passed_fixture_uses_recorded_review_grace. No script
   was changed. Full-suite success is not claimed.
 - Yao package-format validation was not used as a native Codex compatibility

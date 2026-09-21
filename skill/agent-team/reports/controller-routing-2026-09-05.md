@@ -26,7 +26,7 @@ outside the behavioral change. No user-owned tasks or automations are created.
 
 On 2026-09-05, Codex CLI 0.153.4 executed an ephemeral read-only task using
 `--model gpt-5.3-codex-spark -c model_reasoning_effort=low` with the explicit cwd
-`D:/升级`. The runtime header reported Spark, OpenAI provider, read-only sandbox,
+a maintainer-local test workspace. The runtime header reported Spark, OpenAI provider, read-only sandbox,
 and low effort. The task read the actual installed implementation-lanes.md and
 identified its Luna/Terra fixed-role statements. The process exited 0.
 
@@ -139,7 +139,7 @@ repairs, then separately checked the new root-implementation counterexample.
 The final focused rule review found no blocker; it did not substitute for the
 outer runtime and file-integrity checks.
 
-Source artifacts are under `D:/升级/agent-routing-validation/`: the original
+Source artifacts remain in a maintainer-local evidence directory (not shipped): the original
 baseline, per-attempt baseline hashes, native traces, `attempt-1-result.json`,
 `attempt-2-result.json`, `attempt-3-result.json`, and `question-result.json`.
 All routing inputs stayed unchanged during attempt 3. Afterward, an unrelated

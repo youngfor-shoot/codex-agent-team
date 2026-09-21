@@ -16,7 +16,7 @@ availability rather than whether a behavioral prohibition is followed.
 Representative invocation, with output captured outside the read-only work:
 
 ```powershell
-codex exec --ephemeral --skip-git-repo-check --sandbox read-only --disable multi_agent --model gpt-5.6-sol -c model_reasoning_effort=medium -C 'D:\升级\agent-routing-validation\hardening-054' '<bounded test prompt>'
+codex exec --ephemeral --skip-git-repo-check --sandbox read-only --disable multi_agent --model gpt-5.6-sol -c model_reasoning_effort=medium -C '<absolute-test-workspace>' '<bounded test prompt>'
 ```
 
 The exact issued prompt and all observed output remain in the local traces
@@ -48,7 +48,7 @@ The native dispatch interface did not return effective model/effort attestations
 or a complete descendant call trace; those fields remain unavailable rather
 than being fabricated from configuration.
 
-Local evidence directory: `D:/升级/agent-routing-validation/hardening-054/`.
+Local evidence is retained by the maintainer and is not shipped in this repository.
 Files: `native.stdout.log`, `native.stderr.log`, `direct-disabled.stdout.log`,
 `direct-disabled.stderr.log`, `native-mode.stdout.log`, `native-mode.stderr.log`.
 The real legacy fixture read by the successful tasks is test input, not an
