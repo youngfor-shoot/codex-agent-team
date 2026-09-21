@@ -71,9 +71,23 @@ function Get-NormalizedHash {
     }
 }
 
+function Test-HiddenPathComponent {
+    param([Parameter(Mandatory = $true)][string]$RelativePath)
+
+    foreach ($part in $RelativePath.Split("/")) {
+        if ($part.StartsWith(".")) {
+            return $true
+        }
+    }
+    return $false
+}
+
 function Test-ManagedRelativePath {
     param([Parameter(Mandatory = $true)][string]$RelativePath)
 
+    if (Test-HiddenPathComponent $RelativePath) {
+        return $false
+    }
     if ($RelativePath -eq "SKILL.md") {
         return $true
     }
@@ -118,6 +132,13 @@ function Assert-ManagedSurfaceSafe {
         }
         if ($targetItem.PSIsContainer) {
             foreach ($item in Get-ChildItem -Recurse -Force -LiteralPath $target) {
+                $relativePath = $item.FullName.Substring($Root.Length).TrimStart(
+                    [IO.Path]::DirectorySeparatorChar,
+                    [IO.Path]::AltDirectorySeparatorChar
+                ).Replace("\", "/")
+                if (Test-HiddenPathComponent $relativePath) {
+                    continue
+                }
                 if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
                     throw "Managed path must not be a reparse point: $($item.FullName)"
                 }
@@ -233,18 +254,46 @@ function Copy-ManagedFiles {
 }
 
 function Remove-EmptyDirectories {
-    param([Parameter(Mandatory = $true)][string]$Root)
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][array]$RemovedFiles
+    )
 
     if (-not (Test-Path -LiteralPath $Root -PathType Container)) {
         return
     }
-    $directories = @(
-        Get-ChildItem -Directory -Recurse -LiteralPath $Root |
-            Sort-Object { $_.FullName.Length } -Descending
+    $rootPath = Get-AbsolutePath $Root
+    $trimCharacters = [char[]]@(
+        [IO.Path]::DirectorySeparatorChar,
+        [IO.Path]::AltDirectorySeparatorChar
     )
-    foreach ($directory in $directories) {
-        if (@(Get-ChildItem -Force -LiteralPath $directory.FullName).Count -eq 0) {
-            Remove-Item -LiteralPath $directory.FullName -Force
+    $filesystemRoot = [IO.Path]::GetPathRoot($rootPath)
+    if ($rootPath.Length -gt $filesystemRoot.Length) {
+        $rootPath = $rootPath.TrimEnd($trimCharacters)
+    }
+    $comparison = if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+        [StringComparison]::OrdinalIgnoreCase
+    }
+    else {
+        [StringComparison]::Ordinal
+    }
+    foreach ($removedFile in $RemovedFiles) {
+        $directory = Split-Path -Parent $removedFile
+        if (-not (Test-PathWithin $directory $rootPath)) {
+            continue
+        }
+        while ($directory -and -not $directory.Equals($rootPath, $comparison)) {
+            if (-not (Test-PathWithin $directory $rootPath)) {
+                break
+            }
+            if (-not (Test-Path -LiteralPath $directory -PathType Container)) {
+                break
+            }
+            if (@(Get-ChildItem -Force -LiteralPath $directory).Count -ne 0) {
+                break
+            }
+            Remove-Item -LiteralPath $directory -Force -ErrorAction Stop
+            $directory = Split-Path -Parent $directory
         }
     }
 }
@@ -258,13 +307,15 @@ function Set-ManagedSurface {
     Copy-ManagedFiles $SourceFiles $DestinationRoot
     $currentFiles = @(Get-ManagedFiles $DestinationRoot)
     $surfaceDrift = Compare-ManagedFiles $SourceFiles $currentFiles
+    $removedFiles = @()
     foreach ($relativePath in $surfaceDrift.Stale) {
         $staleFile = Join-Path $DestinationRoot $relativePath
         if (Test-Path -LiteralPath $staleFile -PathType Leaf) {
-            Remove-Item -LiteralPath $staleFile -Force
+            Remove-Item -LiteralPath $staleFile -Force -ErrorAction Stop
+            $removedFiles += $staleFile
         }
     }
-    Remove-EmptyDirectories $DestinationRoot
+    Remove-EmptyDirectories $DestinationRoot $removedFiles
     return Compare-ManagedFiles $SourceFiles @(Get-ManagedFiles $DestinationRoot)
 }
 
@@ -330,16 +381,16 @@ if ($Mode -eq "Uninstall") {
         Write-Output "Uninstall canceled."
         exit 2
     }
+    $removedFiles = @()
     foreach ($file in $destinationFiles) {
-        Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop
+        $removedFiles += $file.FullName
     }
-    # Prune empty managed directories left by uninstall.
-    $managedDirs = @(Get-ChildItem -Directory -Recurse -LiteralPath $destinationRoot | Sort-Object { $_.FullName.Length } -Descending)
-    foreach ($dir in $managedDirs) {
-        if (@(Get-ChildItem -Force -LiteralPath $dir.FullName).Count -eq 0) {
-            Remove-Item -LiteralPath $dir.FullName -Force -ErrorAction SilentlyContinue
-        }
+    $remainingFiles = @(Get-ManagedFiles $destinationRoot)
+    if ($remainingFiles.Count -gt 0) {
+        throw "Uninstall did not remove every managed file."
     }
+    Remove-EmptyDirectories $destinationRoot $removedFiles
     Write-Output "Uninstalled agent-team runtime copy ($($destinationFiles.Count) managed files)."
     exit 0
 }
@@ -475,20 +526,16 @@ foreach ($file in $sourceFiles) {
     Copy-Item -LiteralPath $file.FullName -Destination $destinationFile -Force
 }
 
+$removedFiles = @()
 foreach ($relativePath in $drift.Stale) {
     $stalePath = Join-Path $destinationRoot $relativePath
     if (Test-Path -LiteralPath $stalePath -PathType Leaf) {
-        Remove-Item -LiteralPath $stalePath -Force
+        Remove-Item -LiteralPath $stalePath -Force -ErrorAction Stop
+        $removedFiles += $stalePath
     }
 }
 
-# Prune empty managed directories left by stale-file removal.
-$managedDirs = @(Get-ChildItem -Directory -Recurse -LiteralPath $destinationRoot | Sort-Object { $_.FullName.Length } -Descending)
-foreach ($dir in $managedDirs) {
-    if (@(Get-ChildItem -Force -LiteralPath $dir.FullName).Count -eq 0) {
-        Remove-Item -LiteralPath $dir.FullName -Force -ErrorAction SilentlyContinue
-    }
-}
+Remove-EmptyDirectories $destinationRoot $removedFiles
 
 $postInstallFiles = @(Get-ManagedFiles $destinationRoot)
 $postInstallDrift = Compare-ManagedFiles $sourceFiles $postInstallFiles

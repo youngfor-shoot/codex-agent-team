@@ -31,6 +31,8 @@ def normalized_hash(path: Path) -> str:
 
 
 def managed_relative_path(relative_path: str) -> bool:
+    if any(part.startswith(".") for part in relative_path.split("/")):
+        return False
     if relative_path == "SKILL.md":
         return True
     parts = relative_path.split("/")
@@ -73,6 +75,9 @@ def assert_managed_surface_safe(root: Path) -> None:
             raise OSError(f"Managed path must not be a link or reparse point: {candidate}")
         if candidate.is_dir():
             for descendant in candidate.rglob("*"):
+                relative_path = descendant.relative_to(root).as_posix()
+                if any(part.startswith(".") for part in relative_path.split("/")):
+                    continue
                 if is_link_like(descendant):
                     raise OSError(
                         "Managed path must not be a link or reparse point: "
@@ -85,17 +90,18 @@ def managed_files(root: Path) -> list[dict[str, str]]:
         return []
     files = []
     for path in root.rglob("*"):
+        relative_path = path.relative_to(root).as_posix()
+        if not managed_relative_path(relative_path):
+            continue
         if not path.is_file():
             continue
-        relative_path = path.relative_to(root).as_posix()
-        if managed_relative_path(relative_path):
-            files.append(
-                {
-                    "relative_path": relative_path,
-                    "full_name": str(path),
-                    "hash": normalized_hash(path),
-                }
-            )
+        files.append(
+            {
+                "relative_path": relative_path,
+                "full_name": str(path),
+                "hash": normalized_hash(path),
+            }
+        )
     return sorted(files, key=lambda item: item["relative_path"])
 
 
@@ -149,17 +155,21 @@ def copy_managed_files(files: list[dict[str, str]], destination_root: Path) -> N
         shutil.copy2(item["full_name"], destination_file)
 
 
-def prune_empty_directories(root: Path) -> None:
-    for directory in sorted(
-        (path for path in root.rglob("*") if path.is_dir()),
-        key=lambda path: len(path.parts),
-        reverse=True,
-    ):
+def prune_empty_ancestors(root: Path, removed_files: list[Path]) -> None:
+    for removed_file in removed_files:
         try:
-            if not any(directory.iterdir()):
+            removed_file.relative_to(root)
+        except ValueError:
+            continue
+        directory = removed_file.parent
+        while directory != root:
+            if not directory.is_dir():
+                break
+            try:
                 directory.rmdir()
-        except OSError:
-            pass
+            except OSError:
+                break
+            directory = directory.parent
 
 
 def converge_managed_surface(
@@ -168,11 +178,13 @@ def converge_managed_surface(
     copy_managed_files(source_files, destination_root)
     current_files = managed_files(destination_root)
     drift = compare_managed(source_files, current_files)
+    removed_files = []
     for relative_path in drift["stale"]:
         stale_path = destination_root / relative_path
         if stale_path.is_file():
             stale_path.unlink()
-    prune_empty_directories(destination_root)
+            removed_files.append(stale_path)
+    prune_empty_ancestors(destination_root, removed_files)
     return compare_managed(source_files, managed_files(destination_root))
 
 
@@ -274,21 +286,17 @@ def main() -> int:
             if answer not in {"y", "yes"}:
                 print("Uninstall canceled.")
                 return 2
+        removed_files = []
         for item in destination_files:
             stale_path = destination_root / item["relative_path"]
             if stale_path.is_file():
                 stale_path.unlink()
-        # Prune empty directories left by uninstall.
-        for directory in sorted(
-            (path for path in destination_root.rglob("*") if path.is_dir()),
-            key=lambda path: len(path.parts),
-            reverse=True,
-        ):
-            try:
-                if not any(directory.iterdir()):
-                    directory.rmdir()
-            except OSError:
-                pass
+                removed_files.append(stale_path)
+        remaining_files = managed_files(destination_root)
+        if remaining_files:
+            print("Uninstall did not remove every managed file.", file=sys.stderr)
+            return 1
+        prune_empty_ancestors(destination_root, removed_files)
         print(f"Uninstalled agent-team runtime copy ({len(destination_files)} managed files).")
         return 0
 
@@ -431,22 +439,13 @@ def main() -> int:
         destination_file.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(item["full_name"], destination_file)
 
+    removed_files = []
     for relative_path in drift["stale"]:
         stale_path = destination_root / relative_path
         if stale_path.is_file():
             stale_path.unlink()
-
-    # Prune empty managed directories left by stale-file removal.
-    for directory in sorted(
-        (path for path in destination_root.rglob("*") if path.is_dir()),
-        key=lambda path: len(path.parts),
-        reverse=True,
-    ):
-        try:
-            if not any(directory.iterdir()):
-                directory.rmdir()
-        except OSError:
-            pass
+            removed_files.append(stale_path)
+    prune_empty_ancestors(destination_root, removed_files)
 
     post_files = managed_files(destination_root)
     post_drift = compare_managed(source_files, post_files)
