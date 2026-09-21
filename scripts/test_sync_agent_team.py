@@ -387,6 +387,7 @@ class PythonSyncTests(unittest.TestCase):
             hidden_file = destination / "references" / ".private.md"
             hidden_file.parent.mkdir(parents=True)
             hidden_file.write_bytes(b"\xffhidden bytes must not be read\n")
+            (destination / "SKILL.md").write_text("old managed version\n", encoding="utf-8")
 
             install_argv = [
                 str(PYTHON_SYNC),
@@ -403,7 +404,9 @@ class PythonSyncTests(unittest.TestCase):
             self.assertEqual(
                 hidden_file.read_bytes(), b"\xffhidden bytes must not be read\n"
             )
-            self.assertNotIn(hidden_file, backup_files)
+            backup_names = {path.name for path in backup_files}
+            self.assertIn("SKILL.md", backup_names, "the test must exercise a real backup")
+            self.assertNotIn(hidden_file.name, backup_names)
 
             uninstall_argv = [
                 str(PYTHON_SYNC),
@@ -622,6 +625,7 @@ class PowerShellSyncTests(unittest.TestCase):
             hidden_file = destination / "references" / ".private.md"
             hidden_file.parent.mkdir(parents=True)
             hidden_file.write_text("do not manage\n", encoding="utf-8")
+            (destination / "SKILL.md").write_text("old managed version\n", encoding="utf-8")
 
             for mode in ("Install", "Uninstall"):
                 result = subprocess.run(
@@ -648,7 +652,9 @@ class PowerShellSyncTests(unittest.TestCase):
                 )
 
             backup_files = list((root / ".agent-team-backups").rglob("*"))
-            self.assertNotIn(hidden_file, backup_files)
+            backup_names = {path.name for path in backup_files}
+            self.assertIn("SKILL.md", backup_names, "the test must exercise a real backup")
+            self.assertNotIn(hidden_file.name, backup_names)
 
     @unittest.skipUnless(
         shutil.which("pwsh") or shutil.which("powershell"),
