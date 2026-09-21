@@ -2,6 +2,32 @@
 
 All notable changes to the `agent-team` Skill and this repository.
 
+## [0.5.6] - 2026-09-22
+
+### Changed
+
+- Documentation now reflects the synchronizer's existing seven-directory Skill
+  surface: `agents`, `references`, `scripts`, `templates`, `evals`, `reports`,
+  and `tests`, alongside `SKILL.md`.
+- Documentation now covers the existing `Verify`, `Install`, `Restore`, and
+  `Uninstall` contracts, including transactional restore and explicit uninstall
+  failure when managed files remain.
+- Synchronization protects visible managed paths from links and reparse points,
+  leaves hidden components and unrelated files untouched, and removes only
+  empty directories created by managed-file cleanup.
+- Cancellation handling now cleans up and reaps the interrupted child, restores
+  signal handlers, then propagates interruption before later validation runs.
+- Task-packet validation now enforces handoff severity and goal-alignment
+  controls plus nonempty free-text fields for real packets, while retaining
+  template placeholder validation.
+- Static routing now recognizes the documented `$agent-team preview:` form,
+  requires explicit no-action proof for previews, and preserves the distinction
+  between planned topology or wakeup and actual side effects; simple work can
+  remain on the direct ROOT route without forced delegation.
+- `scripts/evidence_walkthrough.py` adds a reproducible prepare → independent
+  review → complete walkthrough. Each run still requires its own recorded
+  evidence; the worked transcript is maintained separately.
+
 ## [0.5.5] - 2026-09-21
 
 This release gathers the accumulated source changes below. Local release

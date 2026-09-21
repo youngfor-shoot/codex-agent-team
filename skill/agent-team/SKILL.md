@@ -2,7 +2,7 @@
 name: agent-team
 description: 'Preview or coordinate minimal safe native delegation. Use for explicit Agent Team, bounded delegation, persistent teams, or monitoring. For ROOT, explicit invocation authorizes selection; implicit matching only recommends and never creates Agents, tasks, or Automations.'
 metadata:
-  version: '0.5.5'
+  version: '0.5.6'
 ---
 
 # Agent Team
@@ -23,26 +23,26 @@ Executors follow only controller-owned scope, verify it, and return a handoff.
 They do not select a team or model, create tasks or Automations, self-promote,
 or bypass this boundary; a root grant allows only named-scope subdelegation.
 
-Before ROOT selects topology, dispatches, or performs an implementation write,
-read [controller policy](references/controller-policy.md). It defines
-authority, five decisions, execution-first, safety, and completion evidence.
-Explicit `$agent-team` authorizes ROOT selection; implicit matching only
-recommends. Ordinary Q&A and explicit no-delegation remain direct.
+Direct execution is valid for small or sequential work when no independently
+bounded outcome provides concrete benefit. ROOT may implement and verify that
+route without inventing a blocker, task packet, preview, or reviewer.
 
-Before the first implementation write, ROOT dispatches a supported executor
-while useful controller analysis, validation, or acceptance continues, or names
-the concrete runtime, authority, or hard-dependency blocker. After dispatch,
-executors own each independently bounded implementation change. Root may only
-analyze, review requirements or tests, validate, maintain controls, then make
-evidence-backed assembly or conflict-resolution edits.
+Before ROOT selects collaboration or dispatches, read
+[controller policy](references/controller-policy.md). Explicit `$agent-team`
+authorizes selection; implicit matching only recommends. Delegate when an
+independent outcome provides concrete benefit alongside useful controller work.
+Keep one writer per file; ROOT may retain disjoint implementation ownership.
+Ordinary Q&A and explicit no-delegation remain direct.
 
 ## Required routes
 
 Before temporary implementation delegation, read
 [implementation lanes](references/implementation-lanes.md), inspect callable
 types, and record lane, model, effort, and reason in Mission. Use
-[task-type routing](references/task-type-routing.md) and
-[supervision and handoffs](references/supervision-and-handoffs.md). Read
+[task-type routing](references/task-type-routing.md) when needed and
+[supervision and handoffs](references/supervision-and-handoffs.md) for delegated
+results. Independent review requires a named residual risk or explicit request
+under controller policy, after deterministic checks. Read
 [persistent teams](references/running-a-persistent-team.md),
 [evidence loops](references/evidence-loop.md), or
 [verification backends](references/verification-backends.md) when applicable;

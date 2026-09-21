@@ -126,6 +126,14 @@ verified source produces `completed`.
 
 ## Emergency stop
 
+During an active POSIX check, SIGINT or SIGTERM kills the child process group,
+restores the previous handlers, and exits the controller command (SIGINT raises
+KeyboardInterrupt; SIGTERM exits with 128 plus its signal number). Later checks
+do not run. Process cleanup also runs before a KeyboardInterrupt or SystemExit
+escapes the check runner. Interruption does not certify completion or rewrite
+the run as successful; use the explicit abort command to close the interrupted
+run when appropriate.
+
 Use a low-entropy reason code so logs cannot accidentally store secrets:
 
 ```powershell

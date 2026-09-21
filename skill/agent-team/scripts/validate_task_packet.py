@@ -16,7 +16,7 @@ HANDOFF_BLOCK_RE = re.compile(
 )
 HANDOFF_OPEN_RE = re.compile(r"^<task_handoff>[ \t]*$", re.MULTILINE)
 HANDOFF_CLOSE_RE = re.compile(r"^</task_handoff>[ \t]*$", re.MULTILINE)
-HANDOFF_FIELD_RE = re.compile(r"^([a-z_]+):[ \t]*.*$")
+HANDOFF_FIELD_RE = re.compile(r"^([a-z_]+):[ \t]*(.*)$")
 REQUIRED_FIELDS = {
     "contract_version",
     "task_id",
@@ -58,8 +58,15 @@ ALLOWED_WAKEUPS = {"none", "heartbeat", "cron"}
 ALLOWED_CONVERGENCE = {"single-pass", "evidence-loop", "phase-gated"}
 ALLOWED_REVIEW_GATES = {"required", "not-required"}
 ALLOWED_REVIEW_STATUSES = {"pending", "passed", "not-applicable"}
+ALLOWED_FINDING_SEVERITIES = {"none", "BLOCKER", "MAJOR", "MINOR"}
+ALLOWED_GOAL_ALIGNMENTS = {"aligned", "drifted"}
+REQUIRED_HANDOFF_FREE_TEXT_FIELDS = {
+    "scope_delta",
+    "new_assumptions",
+    "next_authorized_step",
+}
 CONTRACT_VERSION = 1
-__version__ = "0.5.5"
+__version__ = "0.5.6"
 
 
 def exact_lines(text: str) -> set[str]:
@@ -116,7 +123,9 @@ def final_state_fields(text: str, subject: str, errors: list[str]) -> dict[str, 
     return dict(pairs)
 
 
-def validate_handoff(text: str, subject: str) -> list[str]:
+def validate_handoff(
+    text: str, subject: str, *, enforce_packet_values: bool = False
+) -> list[str]:
     errors: list[str] = []
     opening_count = len(HANDOFF_OPEN_RE.findall(text))
     closing_count = len(HANDOFF_CLOSE_RE.findall(text))
@@ -136,12 +145,13 @@ def validate_handoff(text: str, subject: str) -> list[str]:
             f"{subject} requires exactly one <task_handoff> block, "
             f"found {len(handoff_blocks)}"
         )
-    handoff_field_names = [
-        match.group(1)
+    handoff_field_matches = [
+        match
         for block in handoff_blocks
         for line in block.splitlines()
         if (match := HANDOFF_FIELD_RE.fullmatch(line.rstrip()))
     ]
+    handoff_field_names = [match.group(1) for match in handoff_field_matches]
     handoff_fields = {f"{name}:" for name in handoff_field_names}
     for name, count in sorted(Counter(handoff_field_names).items()):
         if count > 1:
@@ -151,6 +161,28 @@ def validate_handoff(text: str, subject: str) -> list[str]:
             errors.append(f"{subject} missing handoff field: {handoff_field}")
     if handoff_blocks and not text.rstrip().endswith("</task_handoff>"):
         errors.append(f"{subject} handoff block must be final content")
+    if enforce_packet_values:
+        handoff_values = {
+            match.group(1): match.group(2)
+            for match in handoff_field_matches
+        }
+        severity = handoff_values.get("finding_severity")
+        if severity is not None and severity not in ALLOWED_FINDING_SEVERITIES:
+            errors.append(
+                "finding_severity must be one of "
+                f"{sorted(ALLOWED_FINDING_SEVERITIES)}, found {severity!r}"
+            )
+        alignment = handoff_values.get("goal_alignment")
+        if alignment is not None and alignment not in ALLOWED_GOAL_ALIGNMENTS:
+            errors.append(
+                "goal_alignment must be one of "
+                f"{sorted(ALLOWED_GOAL_ALIGNMENTS)}, found {alignment!r}"
+            )
+        for field in sorted(REQUIRED_HANDOFF_FREE_TEXT_FIELDS):
+            if field in handoff_values and not handoff_values[field].strip():
+                errors.append(
+                    f"{field} must be non-empty (use 'none' when not applicable)"
+                )
     return errors
 
 
@@ -178,7 +210,7 @@ def validate_template(text: str) -> list[str]:
 
 
 def validate_packet(text: str, require_complete: bool) -> list[str]:
-    errors = validate_handoff(text, "packet")
+    errors = validate_handoff(text, "packet", enforce_packet_values=True)
     fields = metadata_fields(text, "packet", errors)
     final_fields = final_state_fields(text, "packet", errors)
     lines = exact_lines(text)

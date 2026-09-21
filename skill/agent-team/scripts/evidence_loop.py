@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-__version__ = "0.5.5"
+__version__ = "0.5.6"
 SCHEMA_VERSION = 1
 MAX_CAPTURE_CHARS = 4_000
 MAX_HISTORY_EVENTS = 40
@@ -699,6 +699,9 @@ def posix_signal_cleanup(process: subprocess.Popen[bytes]) -> Any:
     def _kill_child_group(_signum: int, _frame: Any) -> None:
         with suppress(ProcessLookupError, OSError):
             os.killpg(process.pid, signal.SIGKILL)  # type: ignore[attr-defined]
+        if _signum == signal.SIGINT:
+            raise KeyboardInterrupt
+        raise SystemExit(128 + _signum)
 
     previous_int = signal.signal(signal.SIGINT, _kill_child_group)
     previous_term = signal.signal(signal.SIGTERM, _kill_child_group)
@@ -766,6 +769,13 @@ def run_check(
                 windows_job = None
                 if not terminated:
                     returncode = -1
+            except (KeyboardInterrupt, SystemExit) as cancellation:
+                try:
+                    terminate_process_tree(process, windows_job)
+                finally:
+                    windows_job = None
+                    # Cleanup failure must never turn cancellation into a check result.
+                    raise cancellation
             finally:
                 close_windows_handle(windows_job)
             return {

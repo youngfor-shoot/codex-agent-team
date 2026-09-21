@@ -740,6 +740,8 @@ class EvidenceLoopTests(unittest.TestCase):
         process.kill.assert_called_once()
 
     def test_posix_signal_cleanup_kills_child_group_and_restores_handlers(self) -> None:
+        import signal
+
         process = mock.Mock()
         process.pid = 456
         with (
@@ -753,12 +755,95 @@ class EvidenceLoopTests(unittest.TestCase):
             evidence_loop.posix_signal_cleanup(process),
         ):
             handler = signal_fn.call_args_list[0].args[1]
-            handler(None, None)
+            with self.assertRaises(KeyboardInterrupt):
+                handler(signal.SIGINT, None)
 
         killpg.assert_called_once()
         self.assertEqual(signal_fn.call_count, 4)
         self.assertEqual(signal_fn.call_args_list[2].args[1], "old-int")
         self.assertEqual(signal_fn.call_args_list[3].args[1], "old-term")
+
+    def test_run_check_cancellation_reaps_process(self) -> None:
+        from contextlib import nullcontext
+
+        process = mock.Mock()
+        process.wait.side_effect = KeyboardInterrupt
+        with (
+            mock.patch.object(evidence_loop.subprocess, "Popen", return_value=process),
+            mock.patch.object(evidence_loop, "create_windows_kill_job", return_value=None),
+            mock.patch.object(evidence_loop, "posix_signal_cleanup", return_value=nullcontext()),
+            mock.patch.object(evidence_loop, "terminate_process_tree", return_value=True) as terminate,
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            evidence_loop.run_check([sys.executable, "acceptance.py"], self.worktree, 3)
+        terminate.assert_called_once_with(process, None)
+
+    def test_cancellation_survives_cleanup_errors(self) -> None:
+        from contextlib import nullcontext
+
+        for cancellation in (KeyboardInterrupt(), SystemExit(143)):
+            with self.subTest(cancellation=type(cancellation).__name__):
+                process = mock.Mock()
+                process.wait.side_effect = cancellation
+                with (
+                    mock.patch.object(evidence_loop.subprocess, "Popen", return_value=process),
+                    mock.patch.object(evidence_loop, "create_windows_kill_job", return_value=None),
+                    mock.patch.object(evidence_loop, "posix_signal_cleanup", return_value=nullcontext()),
+                    mock.patch.object(evidence_loop, "terminate_process_tree", side_effect=PermissionError("cleanup denied")),
+                    self.assertRaises(type(cancellation)) as raised,
+                ):
+                    evidence_loop.run_check(["python", "check.py"], self.worktree, 1)
+                self.assertIs(raised.exception, cancellation)
+
+    def test_sigterm_cleanup_propagates_exit_and_restores_handlers(self) -> None:
+        import signal
+
+        process = mock.Mock(pid=456)
+        with (
+            mock.patch.object(evidence_loop.os, "name", "posix"),
+            mock.patch.object(evidence_loop.os, "killpg", create=True) as killpg,
+            mock.patch("signal.SIGKILL", 9, create=True),
+            mock.patch("signal.signal", side_effect=["old-int", "old-term", None, None]) as signal_fn,
+            self.assertRaises(SystemExit) as raised,
+            evidence_loop.posix_signal_cleanup(process),
+        ):
+            signal_fn.call_args_list[1].args[1](signal.SIGTERM, None)
+        self.assertEqual(raised.exception.code, 128 + signal.SIGTERM)
+        killpg.assert_called_once_with(process.pid, 9)
+        self.assertEqual(signal_fn.call_args_list[-2].args, (signal.SIGINT, "old-int"))
+        self.assertEqual(signal_fn.call_args_list[-1].args, (signal.SIGTERM, "old-term"))
+
+    @unittest.skipIf(os.name == "nt", "real POSIX signals require a POSIX host")
+    def test_real_signals_stop_before_following_check(self) -> None:
+        import signal
+
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            with self.subTest(signum=signum):
+                marker = self.case_dir / f"following-{signum}.txt"
+                child = self.case_dir / f"interrupt-{signum}.py"
+                child.write_text(
+                    "import os, signal, time\n"
+                    "time.sleep(0.2)\n"
+                    f"os.kill(os.getppid(), {int(signum)})\n"
+                    "time.sleep(10)\n",
+                    encoding="utf-8",
+                )
+                driver = self.case_dir / f"driver-{signum}.py"
+                driver.write_text(
+                    "import sys\nfrom pathlib import Path\n"
+                    f"sys.path.insert(0, {str(PACKAGE_ROOT / 'scripts')!r})\n"
+                    "import evidence_loop\n"
+                    f"evidence_loop.run_check([sys.executable, {str(child)!r}], Path({str(self.worktree)!r}), 3)\n"
+                    f"Path({str(marker)!r}).write_text('must not run')\n",
+                    encoding="utf-8",
+                )
+                result = subprocess.run(
+                    [sys.executable, "-B", str(driver)],
+                    capture_output=True, text=True, timeout=8, check=False,
+                )
+                expected_exit = -signal.SIGINT if signum == signal.SIGINT else 128 + signum
+                self.assertEqual(result.returncode, expected_exit, result.stderr)
+                self.assertFalse(marker.exists(), "cancellation continued into the following check")
 
     def test_windows_wrapper_preserves_check_command(self) -> None:
         command = [sys.executable, "acceptance.py", "--strict"]

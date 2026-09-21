@@ -139,7 +139,9 @@ Set-Location codex-agent-team
 The helper installs to `~/.codex/skills/agent-team` by default, backs up the
 currently managed files, preserves unknown files, and verifies hashes after the
 copy. Pass `--destination <path>` (Python) or `-Destination <path>`
-(PowerShell) to use another runtime location.
+(PowerShell) to use another runtime location. The main synchronizers support
+`Verify`, `Install`, `Restore`, and `Uninstall`; `Restore` requires the named
+backup to restore, while `Uninstall` removes only managed files.
 
 The companion helper installs only `luna-worker.toml` and
 `terra-worker.toml` to `~/.codex/agents`, backing up existing managed copies
@@ -149,8 +151,8 @@ current runtime; if unavailable, use only another currently supported route
 and report the substitution or blocker. The profiles' pinned `max` effort is
 an explicit role setting, not a general effort recommendation.
 
-On another platform, copy `skill/agent-team/` to
-`~/.codex/skills/agent-team/` with the platform's normal file tools.
+On macOS and Linux, use the same cross-platform Python helper shown above; it
+does not require PowerShell.
 
 ## Use
 

@@ -379,12 +379,97 @@ class PythonSyncTests(unittest.TestCase):
                 "current\n",
             )
 
+    def test_hidden_components_are_ignored_during_install_and_uninstall(self) -> None:
+        sync = load_python_sync()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            destination = root / "agent-team"
+            hidden_file = destination / "references" / ".private.md"
+            hidden_file.parent.mkdir(parents=True)
+            hidden_file.write_bytes(b"\xffhidden bytes must not be read\n")
+            (destination / "SKILL.md").write_text("old managed version\n", encoding="utf-8")
+
+            install_argv = [
+                str(PYTHON_SYNC),
+                "--mode",
+                "Install",
+                "--destination",
+                str(destination),
+                "--yes",
+            ]
+            with mock.patch.object(sys, "argv", install_argv):
+                self.assertEqual(sync.main(), 0)
+
+            backup_files = list((root / ".agent-team-backups").rglob("*"))
+            self.assertEqual(
+                hidden_file.read_bytes(), b"\xffhidden bytes must not be read\n"
+            )
+            backup_names = {path.name for path in backup_files}
+            self.assertIn("SKILL.md", backup_names, "the test must exercise a real backup")
+            self.assertNotIn(hidden_file.name, backup_names)
+
+            uninstall_argv = [
+                str(PYTHON_SYNC),
+                "--mode",
+                "Uninstall",
+                "--destination",
+                str(destination),
+                "--yes",
+            ]
+            with mock.patch.object(sys, "argv", uninstall_argv):
+                self.assertEqual(sync.main(), 0)
+
+            self.assertEqual(
+                hidden_file.read_bytes(), b"\xffhidden bytes must not be read\n"
+            )
+
+    def test_prunes_only_ancestors_of_files_removed_by_each_operation(self) -> None:
+        sync = load_python_sync()
+        for mode in ("Install", "Restore", "Uninstall"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temporary_directory:
+                root = Path(temporary_directory)
+                destination = root / "agent-team"
+                stale_file = destination / "templates" / "obsolete" / "old.md"
+                stale_file.parent.mkdir(parents=True)
+                stale_file.write_text("stale\n", encoding="utf-8")
+                unrelated_empty = destination / "unrelated-empty"
+                unrelated_empty.mkdir()
+
+                argv = [
+                    str(PYTHON_SYNC),
+                    "--mode",
+                    mode,
+                    "--destination",
+                    str(destination),
+                    "--yes",
+                ]
+                if mode == "Restore":
+                    backup = root / ".agent-team-backups" / "old"
+                    backup.mkdir(parents=True)
+                    (backup / "SKILL.md").write_text("old\n", encoding="utf-8")
+                    argv.extend(["--backup-name", "old"])
+
+                with mock.patch.object(sys, "argv", argv):
+                    self.assertEqual(sync.main(), 0)
+
+                self.assertFalse(stale_file.exists())
+                self.assertFalse(stale_file.parent.exists())
+                self.assertTrue(unrelated_empty.is_dir())
+
 
 class PowerShellSyncTests(unittest.TestCase):
     def test_script_avoids_recursive_remove_item(self) -> None:
         text = POWERSHELL_SYNC.read_text(encoding="utf-8")
 
         self.assertNotRegex(text, r"Remove-Item[^\r\n]*-Recurse")
+
+    def test_uninstall_removal_does_not_suppress_errors(self) -> None:
+        text = POWERSHELL_SYNC.read_text(encoding="utf-8")
+        uninstall_block = text.split('if ($Mode -eq "Uninstall")', 1)[1].split(
+            'if ($Mode -eq "Restore")', 1
+        )[0]
+
+        self.assertNotIn("SilentlyContinue", uninstall_block)
 
     @unittest.skipUnless(
         shutil.which("pwsh") or shutil.which("powershell"),
@@ -526,6 +611,191 @@ class PowerShellSyncTests(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(current_file.read_text(encoding="utf-8"), "current\n")
+
+    @unittest.skipUnless(
+        shutil.which("pwsh") or shutil.which("powershell"),
+        "PowerShell is not available",
+    )
+    def test_hidden_components_are_ignored_during_install_and_uninstall(self) -> None:
+        executable = shutil.which("pwsh") or shutil.which("powershell")
+        assert executable is not None
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            destination = root / "agent-team"
+            hidden_file = destination / "references" / ".private.md"
+            hidden_file.parent.mkdir(parents=True)
+            hidden_file.write_text("do not manage\n", encoding="utf-8")
+            (destination / "SKILL.md").write_text("old managed version\n", encoding="utf-8")
+
+            for mode in ("Install", "Uninstall"):
+                result = subprocess.run(
+                    [
+                        executable,
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-File",
+                        str(POWERSHELL_SYNC),
+                        "-Mode",
+                        mode,
+                        "-Destination",
+                        str(destination),
+                        "-Confirm:$false",
+                    ],
+                    cwd=REPOSITORY_ROOT,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(
+                    hidden_file.read_text(encoding="utf-8"), "do not manage\n"
+                )
+
+            backup_files = list((root / ".agent-team-backups").rglob("*"))
+            backup_names = {path.name for path in backup_files}
+            self.assertIn("SKILL.md", backup_names, "the test must exercise a real backup")
+            self.assertNotIn(hidden_file.name, backup_names)
+
+    @unittest.skipUnless(
+        shutil.which("pwsh") or shutil.which("powershell"),
+        "PowerShell is not available",
+    )
+    def test_prunes_only_ancestors_of_files_removed_by_each_operation(self) -> None:
+        executable = shutil.which("pwsh") or shutil.which("powershell")
+        assert executable is not None
+        for mode in ("Install", "Restore", "Uninstall"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temporary_directory:
+                root = Path(temporary_directory)
+                destination = root / "agent-team"
+                stale_file = destination / "templates" / "obsolete" / "old.md"
+                stale_file.parent.mkdir(parents=True)
+                stale_file.write_text("stale\n", encoding="utf-8")
+                unrelated_empty = destination / "unrelated-empty"
+                unrelated_empty.mkdir()
+
+                command = [
+                    executable,
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-File",
+                    str(POWERSHELL_SYNC),
+                    "-Mode",
+                    mode,
+                    "-Destination",
+                    str(destination),
+                    "-Confirm:$false",
+                ]
+                if mode == "Restore":
+                    backup = root / ".agent-team-backups" / "old"
+                    backup.mkdir(parents=True)
+                    (backup / "SKILL.md").write_text("old\n", encoding="utf-8")
+                    command.extend(["-BackupName", "old"])
+
+                result = subprocess.run(
+                    command,
+                    cwd=REPOSITORY_ROOT,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertFalse(stale_file.exists())
+                self.assertFalse(stale_file.parent.exists())
+                self.assertTrue(unrelated_empty.is_dir())
+
+    @unittest.skipUnless(
+        shutil.which("pwsh") or shutil.which("powershell"),
+        "PowerShell is not available",
+    )
+    def test_uninstall_keeps_destination_root_with_a_trailing_separator(self) -> None:
+        executable = shutil.which("pwsh") or shutil.which("powershell")
+        assert executable is not None
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            destination = Path(temporary_directory) / "agent-team"
+            stale_file = destination / "templates" / "obsolete" / "old.md"
+            stale_file.parent.mkdir(parents=True)
+            stale_file.write_text("stale\n", encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    executable,
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-File",
+                    str(POWERSHELL_SYNC),
+                    "-Mode",
+                    "Uninstall",
+                    "-Destination",
+                    str(destination) + os.sep,
+                    "-Confirm:$false",
+                ],
+                cwd=REPOSITORY_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(destination.is_dir())
+            self.assertEqual(list(destination.iterdir()), [])
+
+    @unittest.skipUnless(
+        shutil.which("pwsh") or shutil.which("powershell"),
+        "PowerShell is not available",
+    )
+    def test_uninstall_fails_for_a_locked_managed_file(self) -> None:
+        executable = shutil.which("pwsh") or shutil.which("powershell")
+        assert executable is not None
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            destination = Path(temporary_directory) / "agent-team"
+            blocked_file = destination / "SKILL.md"
+            marker_file = Path(temporary_directory) / "remove-item-reached"
+            destination.mkdir()
+            blocked_file.write_text("managed\n", encoding="utf-8")
+            harness = r'''
+$scriptPath = $env:SYNC_AGENT_TEAM_SCRIPT
+$destination = $env:SYNC_AGENT_TEAM_DESTINATION
+$blockedPath = $env:SYNC_AGENT_TEAM_BLOCKED_FILE
+$markerPath = $env:SYNC_AGENT_TEAM_MARKER_FILE
+function global:Remove-Item {
+    param([string]$LiteralPath, [switch]$Force, [string]$ErrorAction)
+    if ([IO.Path]::GetFileName($LiteralPath) -eq [IO.Path]::GetFileName($blockedPath)) {
+        [IO.File]::WriteAllText($markerPath, "Remove-Item reached")
+        if ($ErrorAction -eq "SilentlyContinue") { return }
+        throw "simulated locked managed file"
+    }
+    Microsoft.PowerShell.Management\Remove-Item -LiteralPath $LiteralPath -Force:$Force
+}
+& $scriptPath -Mode Uninstall -Destination $destination -Confirm:$false
+exit $LASTEXITCODE
+'''
+            environment = os.environ.copy()
+            environment["SYNC_AGENT_TEAM_SCRIPT"] = str(POWERSHELL_SYNC)
+            environment["SYNC_AGENT_TEAM_DESTINATION"] = str(destination)
+            # The same file may have different path spelling in a CI worker.
+            environment["SYNC_AGENT_TEAM_BLOCKED_FILE"] = blocked_file.as_posix()
+            environment["SYNC_AGENT_TEAM_MARKER_FILE"] = str(marker_file)
+            result = subprocess.run(
+                [
+                    executable,
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    harness,
+                ],
+                cwd=REPOSITORY_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=environment,
+            )
+
+            self.assertEqual(marker_file.read_text(encoding="utf-8"), "Remove-Item reached")
+            self.assertNotEqual(result.returncode, 0, result.stderr)
+            self.assertIn("simulated locked managed file", result.stderr)
+            self.assertNotIn("Uninstalled agent-team runtime copy", result.stdout)
+            self.assertTrue(blocked_file.exists())
 
 
 if __name__ == "__main__":
