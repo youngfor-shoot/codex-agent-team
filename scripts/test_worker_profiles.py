@@ -31,10 +31,18 @@ class WorkerProfileContractTests(unittest.TestCase):
         self.assertIn("Custom roles can pin their model and effort: do not override them", normalized)
         self.assertIn("controller-selected supported `model` and `reasoning_effort`", normalized)
         self.assertIn("`fork_turns: none`", lanes)
-        self.assertIn("Routine implementation with an exact scope", normalized)
-        self.assertIn("security-sensitive implementation", normalized)
-        self.assertIn("correct the specification", normalized)
         self.assertIn("never activates independent review", normalized)
+
+        routing_path = "references/dynamic-model-routing.md"
+        self.assertIn(routing_path, skill)
+        self.assertIn("dynamic-model-routing.md", lanes)
+        routing = (ROOT / "skill" / "agent-team" / routing_path).read_text(encoding="utf-8")
+        self.assertIn("## Default: GPT-6.1 Terra", routing)
+        self.assertIn("## Escalate: GPT-6.1 Sol", routing)
+        self.assertIn("`gpt-6.1-terra`", routing)
+        self.assertIn("`gpt-6.1-sol`", routing)
+        self.assertNotIn("## Model and effort matrix", lanes)
+        self.assertIn("not GPT-6.1 aliases", normalized)
 
 
 if __name__ == "__main__":
