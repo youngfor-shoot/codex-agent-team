@@ -21,8 +21,9 @@ dependencies:
 - Use read-only instructions and tools; a separate context is not an OS
   sandbox. Native review consumes model usage but requires no additional MCP
   server or external provider setup. Select a supported model appropriate to
-  the named residual risk; use the runtime rules in `implementation-lanes.md`
-  for an Astra override. Same-model independent review is valid; different
+  the named residual risk under `dynamic-model-routing.md`; use the dispatch
+  rules in `implementation-lanes.md`. Review alone does not require Sol.
+  Same-model independent review is valid; different
   models do not guarantee independent errors.
 
 Check that native delegation is actually callable on the current host. If it

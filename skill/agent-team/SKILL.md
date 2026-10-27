@@ -2,7 +2,7 @@
 name: agent-team
 description: 'Preview or coordinate minimal safe native delegation. Use for explicit Agent Team, bounded delegation, persistent teams, or monitoring. For ROOT, explicit invocation authorizes selection; implicit matching only recommends and never creates Agents, tasks, or Automations.'
 metadata:
-  version: '0.5.6'
+  version: '0.5.7'
 ---
 
 # Agent Team
@@ -33,6 +33,20 @@ authorizes selection; implicit matching only recommends. Delegate when an
 independent outcome provides concrete benefit alongside useful controller work.
 Keep one writer per file; ROOT may retain disjoint implementation ownership.
 Ordinary Q&A and explicit no-delegation remain direct.
+
+## Dynamic model routing
+
+Default to GPT-6.1 Terra (`gpt-6.1-terra`). Escalate to GPT-6.1 Sol
+(`gpt-6.1-sol`) for competing explanations, cross-module causal reasoning,
+architecture/concurrency/state/integrity/complex compatibility, conflicting
+requirements, difficult reasoning, two evidence-distinct failed repairs, or
+new evidence invalidating the plan. Resolve external blockers first. Length
+and file count alone do not justify escalation. Follow an explicit user model
+choice. Read [dynamic model routing](references/dynamic-model-routing.md) when
+selecting a model, escalating, or handing work back. Return routine work to
+Terra when handoff is worthwhile; never claim a switch without runtime evidence.
+Model preference does not grant delegation authority or change the active
+session model by itself. Do not narrate routine routing decisions.
 
 ## Required routes
 

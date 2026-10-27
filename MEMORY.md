@@ -6,6 +6,17 @@ Store durable decisions for the canonical `agent-team` Skill source.
 
 ## Durable Decisions
 
+### 2026-10-27: GPT-6.1 dynamic routing
+
+- The current policy defaults to GPT-6.1 Terra, escalates to GPT-6.1 Sol on
+  explicit complexity or evidence-distinct repair failures, and returns routine
+  work when worthwhile. External blockers are handled separately.
+- This supersedes historical model matrices below. User model choices, live
+  runtime availability, pinned-role boundaries, and final verification remain
+  authoritative. A policy update does not switch an active session model.
+- Existing GPT-5.6 companion profiles remain optional legacy configurations,
+  not aliases for the current GPT-6.1 routes. No usage savings are measured.
+
 ### 2026-09-21: v0.5.5 publication preparation
 
 - Prepared the release from an isolated clone of the committed canonical
