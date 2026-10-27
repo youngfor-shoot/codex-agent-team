@@ -2,6 +2,20 @@
 
 All notable changes to the `agent-team` Skill and this repository.
 
+## [0.5.7] - 2026-10-27
+
+### Changed
+
+- Default model routing to GPT-6.1 Terra with GPT-6.1 Sol for explicit
+  complexity signals or two failed repairs based on different evidence.
+- Separate external blockers from model escalation, preserve compact evidence
+  handoffs, and return routine work to Terra when worthwhile.
+- Replace the older model matrix and Astra-specific review guidance with a
+  shared dynamic routing policy. Respect explicit model choices, live tool
+  support and pinned roles; never claim an unobserved switch.
+- Keep existing GPT-5.6 companion profiles as optional legacy configurations.
+  Model preference does not change global settings or authorize delegation.
+
 ## [0.5.6] - 2026-09-22
 
 ### Changed

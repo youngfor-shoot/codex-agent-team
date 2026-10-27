@@ -13,7 +13,7 @@
 - 选择单次通过、阶段门或受控证据循环。
 - 对实质性工作强制确定性检查，仅对具名的残余风险增加独立审查。
 - 根据当前运行时公开的模型和 Agent 类型路由有界实现。
-- 提供可选的 Luna 和 Terra worker 配置；Codex 仍负责架构和验收。
+- Retains optional legacy GPT-5.6 worker profiles; Codex owns architecture and acceptance.
 - 围绕发布、部署、删除、支付、权限等后果性动作保留人工门。
 - 校验任务包（task packet），并能冻结隔离的 Git worktree 证据循环。
 
@@ -50,19 +50,38 @@
 - **ROOT**——控制器角色，负责授权、路由、范围、整合和最终验收。
 - **EXECUTOR**——受父级分配范围约束的执行者；不能选择团队或模型、创建任务或自动化，也不能提升自身权限。只有 ROOT 明确授予具名范围时才可继续委派。
 
-## 运行时模型与 effort 建议
+## Dynamic model routing
 
-此矩阵是选型建议，不保证某次会话具备相应模型或原生 Agent 类型。委派前应检查当前运行时可调用的类型及支持的模型/effort。矩阵不作质量、速度、成本或基准测试承诺。
+Default to **GPT-6.1 Terra** (`gpt-6.1-terra`) for routine work with clear
+steps and observable acceptance. Use **GPT-6.1 Sol** (`gpt-6.1-sol`) for
+competing root causes, cross-module causal reasoning, architecture/concurrency/
+state/integrity/complex compatibility, material requirement conflicts, difficult
+reasoning, two failed repairs based on different evidence, or new evidence that
+invalidates a potentially harmful plan. Start with Sol when a signal is already
+present; task length and file count alone do not qualify.
 
-| 模型 | 建议 effort | 常见的有界工作 |
-| --- | --- | --- |
-| Spark (`gpt-5.3-codex-spark`) | low 或 medium | 很小且明确的修改，或快速、有界的只读检查。 |
-| Luna (`gpt-5.6-luna`) | medium 或 high | 范围明确、接口已确定、验收可观察的常规实现。 |
-| Sol (`gpt-5.6-sol`) | medium 或 high | 需要比常规工作更多判断的一般有界执行。 |
-| Terra (`gpt-5.6-terra`) | high 或 xhigh | 跨模块正确性、困难调试、并发、持久化或安全敏感实现。 |
-| Astra (`gpt-6-astra`) | high 或 xhigh | 有独立价值且确有理由的困难分析或调查。 |
+Resolve missing permissions, inputs, dependencies, network/service failures, and
+unsupported tools as external blockers. Handoffs retain the goal, acceptance,
+relevant files and versions, original evidence, attempted fixes and results,
+excluded causes, and the exact unresolved question. Return routine work to Terra
+when worthwhile; keep a short finish with the current model.
 
-effort 支持情况取决于运行时。只有任务风险、复杂度、契约要求或同一有界目标在较低 effort 下失败的证据足以支持请求 `max`。仓库只有两个可选 worker 配置：`luna_worker` 和 `terra_worker`；它们分别固定对应模型和 `max` effort。这些配置不能证明运行时实际使用了对应身份。请求值和实际值是两类证据；运行时没有确认时，应将实际模型/effort 记为未知。
+Explicit user model choices take precedence. Inspect live model and effort
+support; use an unpinned supported role for the exact requested model.
+The optional `luna_worker` and `terra_worker` profiles are legacy GPT-5.6
+configurations with fixed `max` effort, not GPT-6.1 aliases. Do not install or
+select them to implement the new default. They remain available for explicitly
+selected compatible legacy workflows.
+
+This Skill defines routing instructions, not a model-switching runtime. When a
+needed switch is unavailable, suggest the appropriate switch with its concrete
+reason. Never claim an unobserved switch; requested and effective model/effort
+are distinct, and missing attestation remains unknown. Model choice grants no
+additional delegation authority. Routine routing needs no repeated narration or
+confirmation. No quota-saving benchmark is claimed.
+
+See the [complete policy](skill/agent-team/references/dynamic-model-routing.md)
+and [runtime dispatch contract](skill/agent-team/references/implementation-lanes.md).
 
 ## 要求
 
@@ -90,12 +109,13 @@ Windows 上也可以使用 PowerShell 助手：
 git clone https://github.com/youngfor-shoot/codex-agent-team.git
 Set-Location codex-agent-team
 & .\scripts\sync-agent-team.ps1 -Mode Install -Confirm:$false
-& .\scripts\sync-worker-agents.ps1 -Mode Install -Confirm:$false
 ```
 
 助手默认安装到 `~/.codex/skills/agent-team`，备份当前受管文件、保留未知文件，并在复制后校验哈希。使用 `--destination <path>`（Python）或 `-Destination <path>`（PowerShell）指定其他位置。
 
-配套助手只会把 `luna-worker.toml` 和 `terra-worker.toml` 安装到
+The optional companion helper is for explicitly selected legacy GPT-5.6 workflows:
+`scripts/sync-worker-agents.ps1 -Mode Install -Confirm:$false`.
+It installs only `luna-worker.toml` and `terra-worker.toml` into
 `~/.codex/agents`，并备份受管配置、保留其他 Agent 文件。这是仓库提供的全部 worker 配置。它们要求当前运行时支持相应模型和 Agent 类型；若不可用，只能改用当前运行时支持的其他路由，并报告替代方案或阻塞。配置中的 `max` 是显式角色设置，不代表一般 effort 建议。
 
 ## 使用

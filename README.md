@@ -25,7 +25,7 @@ authority.
   default with an optional AgentParliament adapter.
 - Routes bounded implementation using the models and agent types exposed by
   the current runtime.
-- Offers optional Luna and Terra worker profiles; Codex keeps architecture and
+- Retains optional legacy GPT-5.6 worker profiles; Codex keeps architecture and
   acceptance.
 - Preserves human gates around publication, deployment, deletion, payment,
   permissions, and other consequential actions.
@@ -83,27 +83,38 @@ by itself.
   not choose a team or model, create tasks or Automations, or promote itself.
   Subdelegation requires an explicit ROOT grant for a named scope.
 
-## Runtime-aware model and effort guidance
+## Dynamic model routing
 
-The matrix is selection guidance, not a guarantee that a model or native agent
-type is available in a particular session. Check the current runtime's callable
-types and supported models/efforts before dispatch. These suggestions make no
-quality, speed, cost, or benchmark claims.
+Default to **GPT-6.1 Terra** (`gpt-6.1-terra`) for routine work with clear
+steps and observable acceptance. Use **GPT-6.1 Sol** (`gpt-6.1-sol`) for
+competing root causes, cross-module causal reasoning, architecture/concurrency/
+state/integrity/complex compatibility, material requirement conflicts, difficult
+reasoning, two failed repairs based on different evidence, or new evidence that
+invalidates a potentially harmful plan. Start with Sol when a signal is already
+present; task length and file count alone do not qualify.
 
-| Model | Suggested effort | Typical bounded work |
-| --- | --- | --- |
-| Spark (`gpt-5.3-codex-spark`) | low or medium | Tiny precise edits or fast, bounded read-only inspection. |
-| Luna (`gpt-5.6-luna`) | medium or high | Routine implementation with exact scope, settled interfaces, and observable acceptance. |
-| Sol (`gpt-5.6-sol`) | medium or high | General bounded execution that needs more judgment than routine work. |
-| Terra (`gpt-5.6-terra`) | high or xhigh | Cross-module correctness, difficult debugging, concurrency, persistence, or security-sensitive implementation. |
-| Astra (`gpt-6-astra`) | high or xhigh | A separately justified difficult analysis or investigation that can run independently. |
+Resolve missing permissions, inputs, dependencies, network/service failures, and
+unsupported tools as external blockers. Handoffs retain the goal, acceptance,
+relevant files and versions, original evidence, attempted fixes and results,
+excluded causes, and the exact unresolved question. Return routine work to Terra
+when worthwhile; keep a short finish with the current model.
 
-Effort support is runtime-dependent. Request `max` only when task risk,
-complexity, a contract, or evidence justifies it. The two bundled optional
-profiles are `luna_worker` and `terra_worker`; each pins its named model and
-`max` effort. Those profile settings do not attest the effective runtime
-identity. Requested and effective model/effort are separate facts; report an
-effective value as unknown when the runtime does not attest it.
+Explicit user model choices take precedence. Inspect live model and effort
+support; use an unpinned supported role for the exact requested model.
+The optional `luna_worker` and `terra_worker` profiles are legacy GPT-5.6
+configurations with fixed `max` effort, not GPT-6.1 aliases. Do not install or
+select them to implement the new default. They remain available for explicitly
+selected compatible legacy workflows.
+
+This Skill defines routing instructions, not a model-switching runtime. When a
+needed switch is unavailable, suggest the appropriate switch with its concrete
+reason. Never claim an unobserved switch; requested and effective model/effort
+are distinct, and missing attestation remains unknown. Model choice grants no
+additional delegation authority. Routine routing needs no repeated narration or
+confirmation. No quota-saving benchmark is claimed.
+
+See the [complete policy](skill/agent-team/references/dynamic-model-routing.md)
+and [runtime dispatch contract](skill/agent-team/references/implementation-lanes.md).
 
 ## Requirements
 
@@ -133,7 +144,6 @@ On Windows you may use the PowerShell helpers instead:
 git clone https://github.com/youngfor-shoot/codex-agent-team.git
 Set-Location codex-agent-team
 & .\scripts\sync-agent-team.ps1 -Mode Install -Confirm:$false
-& .\scripts\sync-worker-agents.ps1 -Mode Install -Confirm:$false
 ```
 
 The helper installs to `~/.codex/skills/agent-team` by default, backs up the
@@ -143,7 +153,9 @@ copy. Pass `--destination <path>` (Python) or `-Destination <path>`
 `Verify`, `Install`, `Restore`, and `Uninstall`; `Restore` requires the named
 backup to restore, while `Uninstall` removes only managed files.
 
-The companion helper installs only `luna-worker.toml` and
+For explicitly selected legacy workflows, the optional
+`scripts/sync-worker-agents.ps1 -Mode Install -Confirm:$false` companion helper
+installs only `luna-worker.toml` and
 `terra-worker.toml` to `~/.codex/agents`, backing up existing managed copies
 and preserving every unrelated Agent file. These are the only bundled worker
 profiles. They require the matching model and agent type to be supported by the

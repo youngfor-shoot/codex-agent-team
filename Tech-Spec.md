@@ -32,9 +32,12 @@ an executor handles another bounded scope.
 
 For a temporary implementation delegation, inspect the live runtime first and
 select an available agent type, model, and effort using the canonical
-[runtime matrix](skill/agent-team/references/implementation-lanes.md). The
-matrix, rather than a forced Luna rule, is the source of truth for choosing a
-bounded implementation lane. Record the selected `agent_type`, requested
+[dynamic routing policy](skill/agent-team/references/dynamic-model-routing.md)
+and [dispatch contract](skill/agent-team/references/implementation-lanes.md).
+GPT-6.1 Terra is the default; GPT-6.1 Sol handles the documented complexity or
+failure signals. Resolve external blockers before escalation and return routine
+work to Terra when the handoff is worthwhile. An explicit user model choice
+takes precedence. Record the selected `agent_type`, requested
 model, requested effort, and reason in Mission; effective runtime identity
 remains `unknown` unless the runtime attests it.
 
